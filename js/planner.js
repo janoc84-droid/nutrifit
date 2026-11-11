@@ -51,22 +51,46 @@
     const refWeight = m.bmi > 27 ? 25 * h * h : a.weight; // evita sobreestimar proteína con mucho sobrepeso
     const factor = { lose: 0.8, recomp: 0.9, muscle: 1.1 }[a.goal] || 1;
     const floor = a.gender === 'male' ? 1500 : 1200;
-    const kcal = Math.round(Math.max(m.tdee * factor, Math.min(floor, m.tdee)) / 10) * 10;
+    const recomendada = Math.round(Math.max(m.tdee * factor, Math.min(floor, m.tdee)) / 10) * 10;
+    // Meta propia (Perfil → Calorías diarias): reemplaza la recomendada; la proteína se mantiene y el resto se ajusta
+    const kcal = a.kcalMeta > 0 ? Math.round(a.kcalMeta) : recomendada;
     const protein = Math.round(refWeight * ({ lose: 2, recomp: 2, muscle: 1.8 }[a.goal] || 1.6));
     let fat, carbs;
     if (a.diet === 'keto') {
       carbs = 40;
       fat = Math.round((kcal - protein * 4 - carbs * 4) / 9);
     } else {
-      fat = Math.round(refWeight * 0.8);
+      fat = Math.min(Math.round(refWeight * 0.8), Math.round((kcal * 0.35) / 9));
       carbs = Math.max(50, Math.round((kcal - protein * 4 - fat * 9) / 4));
     }
     const water = Math.round(a.weight * 0.035 * 10) / 10;
     return {
-      kcal, protein, fat, carbs, water,
+      kcal, recomendada, personalizada: kcal !== recomendada, protein, fat, carbs, water,
       foods: DIET_FOODS[a.diet] || DIET_FOODS.traditional,
       meals: DIET_MEALS[a.diet] || DIET_MEALS.traditional,
     };
+  }
+
+  // ¿Es segura una meta de calorías? Compara con lo que se gasta al día (tdee) y en reposo (bmr).
+  function evaluarMeta(a, m, kcal) {
+    const floor = a.gender === 'male' ? 1500 : 1200;
+    const deficit = m.tdee - kcal, pct = deficit / m.tdee;
+    const kgSem = Math.round((deficit * 7 / 7700) * 100) / 100;
+    const ritmo = kgSem > 0.02 ? `Bajarías unos ${String(kgSem).replace('.', ',')} kg por semana.` : kgSem < -0.02 ? `Subirías unos ${String(-kgSem).replace('.', ',')} kg por semana.` : 'Mantendrías tu peso.';
+    const rec = nutrition({ ...a, kcalMeta: undefined }, m).recomendada;
+    if (Math.abs(kcal - rec) <= rec * 0.03) return { nivel: 'ok', kgSem, titulo: '🟢 Recomendada', texto: `${ritmo} Es la meta calculada para tu objetivo.` };
+    if (kcal < floor || kcal < m.bmr * 0.85 || pct > 0.35) {
+      return { nivel: 'alto', kgSem, titulo: '🔴 Muy baja para ti', confirmar: true,
+        texto: `${ritmo} Está ${kcal < floor ? `bajo el mínimo recomendado (${floor} kcal)` : `muy por debajo de lo que tu cuerpo gasta en reposo (${m.bmr} kcal)`}. Comer tan poco puede hacerte perder músculo, darte cansancio, mareos, mal humor y falta de vitaminas, y suele terminar en efecto rebote. Hazlo solo con control de un nutricionista o médico.` };
+    }
+    if (pct > 0.25 || kcal < m.bmr) {
+      return { nivel: 'ojo', kgSem, titulo: '🟡 Exigente',
+        texto: `${ritmo} Es un déficit fuerte${kcal < m.bmr ? ` (bajo lo que gastas en reposo, ${m.bmr} kcal)` : ''}. Come tu proteína completa, duerme bien, no te saltes los entrenamientos de fuerza y fíjate cómo te sientes. Si hay cansancio o mareos, vuelve a subirla.` };
+    }
+    if (deficit < 0 && (a.goal === 'lose' || a.goal === 'recomp')) {
+      return { nivel: 'info', kgSem, titulo: 'ℹ️ Sobre tu gasto', texto: `${ritmo} Con esta meta no bajarías de peso, porque es más de lo que gastas al día (${m.tdee} kcal).` };
+    }
+    return { nivel: 'ok', kgSem, titulo: '🟢 Razonable', texto: `${ritmo} Es un ritmo sostenible para tu objetivo.` };
   }
 
   // ---------- Proyección ----------
@@ -426,5 +450,6 @@
     return t;
   }
 
-  window.Planner = { GYM_ROUTINES, cardioMachines, metrics, nutrition, projection, generatePlan, buildRoutine, TRX_ROUTINES, tips, BMI_LABELS, generalLevel };
+  window.Planner = {
+    evaluarMeta, GYM_ROUTINES, cardioMachines, metrics, nutrition, projection, generatePlan, buildRoutine, TRX_ROUTINES, tips, BMI_LABELS, generalLevel };
 })();

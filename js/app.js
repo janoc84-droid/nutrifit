@@ -500,6 +500,66 @@
     setTimeout(() => el.remove(), 5200);
   }
 
+  // ---------- Meta de calorías diarias ----------
+  function openKcalGoal(p, volver) {
+    const a = p.answers, m = P.metrics(a);
+    const base = P.nutrition({ ...a, kcalMeta: undefined }, m), rec = base.recomendada;
+    let v = P.nutrition(a, m).kcal;
+    const min = 1000, max = Math.round((m.tdee + 800) / 50) * 50;
+    modal.innerHTML = `
+      <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="Meta de calorías">
+        <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
+        <h2>🔥 Tus calorías diarias</h2>
+        <div class="kg-info">
+          <div><span>Gastas al día (aprox.)</span><strong>${m.tdee} kcal</strong></div>
+          <div><span>Tu cuerpo en reposo</span><strong>${m.bmr} kcal</strong></div>
+          <div><span>Recomendada para tu objetivo</span><strong>${rec} kcal</strong></div>
+        </div>
+        <p class="muted small">Elige cuántas calorías quieres comer al día:</p>
+        <div class="kg-num">
+          <button class="icon-btn" id="kgmenos" aria-label="Bajar 50">−</button>
+          <input id="kgv" type="number" inputmode="numeric" step="50" min="${min}" max="${max}" value="${v}">
+          <span>kcal</span>
+          <button class="icon-btn" id="kgmas" aria-label="Subir 50">+</button>
+        </div>
+        <input id="kgr" type="range" min="${min}" max="${max}" step="50" value="${v}" aria-label="Meta de calorías">
+        <div class="kg-marks"><span>${min}</span><span class="kg-bmr" style="left:${Math.round(((m.bmr - min) / (max - min)) * 100)}%">▲ reposo ${m.bmr}</span><span>${max}</span></div>
+        <div id="kgeval" class="kg-eval"></div>
+        <p class="muted small" id="kgmac"></p>
+        <label class="chk" id="kgconf" hidden><input type="checkbox" id="kgok"> Entiendo el riesgo y lo haré con control de un profesional</label>
+        <button class="btn primary wide" id="kgsave">Guardar mi meta</button>
+        <button class="btn link wide" id="kgrec">Volver a la recomendada (${rec} kcal)</button>
+      </div>`;
+    modal.classList.remove('hidden');
+    const $k = (s) => modal.querySelector(s);
+    const pintar = () => {
+      v = Math.max(min, Math.min(max, Math.round((+$k('#kgv').value || rec) / 10) * 10));
+      $k('#kgr').value = v;
+      const ev = P.evaluarMeta(a, m, v), n2 = P.nutrition({ ...a, kcalMeta: v }, m);
+      $k('#kgeval').className = 'kg-eval ' + ev.nivel;
+      $k('#kgeval').innerHTML = `<strong>${ev.titulo}</strong><p>${esc(ev.texto)}</p>`;
+      $k('#kgmac').textContent = `Con ${v} kcal: proteína ${n2.protein} g (se mantiene) · carbohidratos ${n2.carbs} g · grasas ${n2.fat} g.`;
+      $k('#kgconf').hidden = !ev.confirmar;
+      $k('#kgsave').disabled = !!ev.confirmar && !$k('#kgok').checked;
+    };
+    $k('#kgv').oninput = pintar;
+    $k('#kgv').onchange = () => { $k('#kgv').value = v; pintar(); };
+    $k('#kgr').oninput = () => { $k('#kgv').value = $k('#kgr').value; pintar(); };
+    $k('#kgmenos').onclick = () => { $k('#kgv').value = v - 50; pintar(); };
+    $k('#kgmas').onclick = () => { $k('#kgv').value = v + 50; pintar(); };
+    $k('#kgok').onchange = pintar;
+    const guardar = (valor) => {
+      S.update(p.id, (x) => { if (valor && valor !== rec) x.answers.kcalMeta = valor; else delete x.answers.kcalMeta; });
+      closeModal();
+      toast(valor && valor !== rec ? `🔥 Tu meta ahora es ${valor} kcal al día` : `🔥 Volviste a la recomendada: ${rec} kcal`);
+      renderPlan(p.id, volver || 'nutri');
+    };
+    $k('#kgsave').onclick = () => guardar(v);
+    $k('#kgrec').onclick = () => guardar(null);
+    $k('.m-close').onclick = closeModal;
+    pintar();
+  }
+
   // ---------- Anotar a mano ----------
   // Busca en: alimentos comunes (js/foods.js + foods-mas.js), tus alimentos (agregados por ti o por Claude) y
   // ~2.300 productos de supermercados de Chile (Open Food Facts, js/alimentos-chile.json, se carga al abrir).
@@ -1482,9 +1542,10 @@
     return `
       ${foodBlock}
       <div class="card kcal-card">
-        <span class="muted">Calorías diarias recomendadas</span>
+        <span class="muted">${n.personalizada ? 'Tu meta de calorías (elegida por ti)' : 'Calorías diarias recomendadas'}</span>
         <div class="kcal">${n.kcal}<small> kcal</small></div>
-        <span class="muted small">Gasto estimado ${m.tdee} kcal → ${goalTxt}</span>
+        <span class="muted small">${n.personalizada ? `Recomendada: ${n.recomendada} kcal · gasto estimado ${m.tdee} kcal` : `Gasto estimado ${m.tdee} kcal → ${goalTxt}`}</span>
+        <button class="btn ghost small kg-open" id="kgopen">✏️ Cambiar mi meta</button>
       </div>
       <div class="card">
         ${macro('Proteína', n.protein, pk, 'p')}
@@ -1599,6 +1660,17 @@
         <p class="muted small center">Se mantienen tu bloque, tus sesiones completadas y tu progreso.</p>
       </div>
       <div class="card">
+        <h3>🔥 Calorías diarias</h3>
+        ${(() => { const mm = P.metrics(a), nn = P.nutrition(a, mm), ev = P.evaluarMeta(a, mm, nn.kcal); return `
+        <div class="kg-info">
+          <div><span>${nn.personalizada ? 'Tu meta (elegida por ti)' : 'Tu meta (recomendada)'}</span><strong>${nn.kcal} kcal</strong></div>
+          <div><span>Gastas al día (aprox.)</span><strong>${mm.tdee} kcal</strong></div>
+          ${nn.personalizada ? `<div><span>Recomendada</span><strong>${nn.recomendada} kcal</strong></div>` : ''}
+        </div>
+        <p class="small kg-eval-mini ${ev.nivel}">${ev.titulo} · ${esc(ev.texto.split('. ')[0])}.</p>`; })()}
+        <button class="btn ghost wide" id="kgopen2">✏️ Cambiar mis calorías diarias</button>
+      </div>
+      <div class="card">
         <h3>Configuración de la app</h3>
         <label class="set-row">🎨 Apariencia ${themeSelect()}</label>
         <label class="set-row">🧍 Quién muestra los ejercicios
@@ -1663,6 +1735,7 @@
       bindDayNav(() => renderPlan(p.id, 'nutri'));
       $$('[data-del]').forEach((b) => b.onclick = () => { removeFood(p.id, k, b.dataset.del); renderPlan(p.id, 'nutri'); });
       $('#foodmanual').onclick = () => openManualFood(p);
+      $('#kgopen').onclick = () => openKcalGoal(p, 'nutri');
       $$('[data-liq]').forEach((b) => b.onclick = () => {
         // Té y café: se abre para marcar azúcar, leche, etc.; el agua se anota al tiro
         if (b.dataset.liq === 'te') return openManualFood(p, { meal: 'liquidos', elegir: 'Té negro solo' });
@@ -1713,6 +1786,7 @@
       $('#exportall').onclick = () => download(`calistenia-${new Date().toISOString().slice(0, 10)}.json`, S.exportJSON());
       $('#import').onchange = (e) => importFile(e);
       $('#opensync').onclick = openSync;
+      $('#kgopen2').onclick = () => openKcalGoal(p, 'profile');
       bindThemeSelect();
       const inst = $('#install');
       if (inst) inst.onclick = async () => { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; inst.hidden = true; };
