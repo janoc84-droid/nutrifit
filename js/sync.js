@@ -40,11 +40,11 @@
       if (!r.ok) throw new Error('La nube respondió con error ' + r.status);
       const j = await r.json();
       if (j.error === 'clave') { const e = new Error('El código de conexión no es correcto'); e.clave = true; throw e; }
-      if (j.ok === false && !j.conflicto) throw new Error('La nube no pudo hacerlo (' + (j.mensaje || j.error) + ')');
+      if (j.ok === false && !j.conflicto) { const e = new Error(j.error === 'limite' ? 'Se alcanzó el límite gratis de la IA por ahora' : 'La nube no pudo hacerlo (' + (j.mensaje || j.error) + ')'); e.codigo = j.error; throw e; }
       return j;
     } catch (e) {
-      if (e.name === 'AbortError') throw new Error('La nube no respondió a tiempo');
-      if (e instanceof TypeError) throw new Error('Sin internet');
+      if (e.name === 'AbortError') { const x = new Error('La nube no respondió a tiempo'); x.codigo = 'red'; throw x; }
+      if (e instanceof TypeError) { const x = new Error('Sin internet'); x.codigo = 'red'; throw x; }
       throw e;
     } finally { clearTimeout(to); }
   }
@@ -154,6 +154,8 @@
   window.Sync = {
     sync, connect, disconnect, state, native, conectado, clave: () => bonita(clave()), configurada: () => !!url(),
     encolarFoto, fotosSinSubir, pcEncendido, vigilar,
+    // IA en la nube (Gemini, desde tu Google Drive): tipo 'plato' | 'etiqueta' | 'texto'
+    ia: (tipo, extra) => llamar('ia', { tipo, ...extra }, 120000),
     onStatus: (fn) => subs.push(fn),
   };
   sync();

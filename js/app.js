@@ -345,7 +345,8 @@
     });
   }
 
-  // La foto va a la nube; Claude la revisa en el PC (con tu suscripción) y anota lo que encuentra en el día.
+  // La foto la revisa la IA de la nube (Gemini, en tu Google Drive), aunque el PC esté apagado. Si no puede, la revisa
+  // Claude en el PC cuando esté encendido. Lo encontrado se anota solo en el día.
   // Si el PC está apagado, la foto espera y se anota sola cuando se enciende.
   async function analyzePhoto(p, file) {
     let dataUrl;
@@ -355,7 +356,7 @@
         <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="Foto del plato">
           <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
           <img class="food-photo" src="${dataUrl}" alt="Foto del plato">
-          <p>Para que Claude revise tus fotos, primero conecta este aparato con tu nube (se hace una sola vez).</p>
+          <p>Para que la IA revise tus fotos, primero conecta este aparato con tu nube (se hace una sola vez).</p>
           <button class="btn primary wide" id="fcon">🔗 Conectar este aparato</button>
           <button class="btn link" id="fmanual">Anotar a mano</button>
         </div>`;
@@ -366,10 +367,9 @@
       return;
     }
     const id = 'f' + uidF(), meal = mealByHour(), at = Date.now(), dia = diaSel();
-    Sync.encolarFoto({ id, b64: dataUrl.split(',')[1], tipo: 'image/jpeg', meta: { perfil: p.id, dia, meal, at } });
     addFood(p.id, [{ id, pend: true, name: 'Foto del plato', kcal: 0, meal, src: 'foto', at }], dia);
     fotosEnEspera.add(id);
-    Sync.sync();
+    IA.pedir({ id, tipo: 'plato', b64: dataUrl.split(',')[1], meta: { perfil: p.id, dia, meal, at } });
     waitPhoto(p, id, dia, dataUrl);
   }
 
@@ -403,7 +403,10 @@
       const txt = modal.querySelector('#fwtxt');
       if (!txt) return;
       const st = Sync.state;
-      txt.innerHTML = Sync.fotosSinSubir()
+      txt.innerHTML = IA.enCola(id)
+        ? (IA.trabajando(id) ? '<strong>La IA está mirando tu plato…</strong><br><span class="muted small">Unos segundos.</span>'
+          : '<strong>Sin internet en este momento.</strong><br><span class="muted small">La foto quedó guardada aquí y se revisa sola cuando vuelva la conexión.</span>')
+        : Sync.fotosSinSubir()
         ? (st.status === 'offline' ? '<strong>Sin internet en este momento.</strong><br><span class="muted small">La foto quedó guardada aquí y se envía sola cuando vuelva la conexión.</span>' : '<strong>Enviando la foto…</strong>')
         : ph?.aviso ? `<strong>Claude está ocupado.</strong><br><span class="muted small">${esc(ph.aviso)}</span>`
         : Sync.pcEncendido() ? '<strong>Claude está mirando tu plato en tu PC…</strong><br><span class="muted small">Suele tardar menos de un minuto.</span>'
@@ -430,7 +433,7 @@
           <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
           ${dataUrl ? `<img class="food-photo" src="${dataUrl}" alt="Foto del plato">` : ''}
           <h2>${esc(r.plato || 'Tu plato')}</h2>
-          <p class="ok small">✅ Claude ya lo anotó en tu día. Revisa y corrige si hace falta.</p>
+          <p class="ok small">✅ ${r.ia === 'gemini' ? 'La IA' : 'Claude'} ya lo anotó en tu día. Revisa y corrige si hace falta.</p>
           <div class="food-total"><strong>${Math.round(total)}</strong> kcal aprox. <span class="pill ${r.confianza === 'alta' ? 'ok' : r.confianza === 'baja' ? 'bad' : 'warn'}">confianza ${esc(r.confianza || 'media')}</span></div>
           ${r.nota ? `<p class="muted small">💡 ${esc(r.nota)}</p>` : ''}
           <ul class="food-items">${items.map((x, i) => `
@@ -476,6 +479,12 @@
 
   // Aviso cuando Claude termina una foto mientras usas la app
   const fotosEnEspera = new Set();
+  window.addEventListener('ia-lista', (ev) => {
+    const d = ev.detail || {};
+    if (d.alPC) toast(`⏳ La IA no pudo (${d.motivo || 'error'}). Queda para Claude en tu PC.`, 'warn');
+    avisosFotos();
+    if (modal.classList.contains('hidden') && /tab=nutri/.test(location.hash)) route();
+  });
   function avisosFotos() {
     for (const k of [...etiquetasEnEspera]) {
       const f = S.foods()[k];
@@ -486,7 +495,7 @@
       for (const p of S.profiles()) {
         const e = Object.values(p.food || {}).flat().find((x) => x.id === id);
         if (!e) continue;
-        if (e.hecho) { fotosEnEspera.delete(id); toast(`✅ Claude anotó ${e.consulta ? '' : 'tu foto: '}${e.plato || e.consulta || 'plato'} · ${Math.round(e.total || 0)} kcal`); }
+        if (e.hecho) { fotosEnEspera.delete(id); toast(`✅ ${e.ia === 'gemini' ? 'La IA' : 'Claude'} anotó ${e.consulta ? '' : 'tu foto: '}${e.plato || e.consulta || 'plato'} · ${Math.round(e.total || 0)} kcal`); }
         else if (e.err) { fotosEnEspera.delete(id); toast('⚠️ ' + e.err, 'warn'); }
       }
     }
@@ -624,7 +633,7 @@
         <div id="mfnone" class="mf-none" hidden>
           <p id="mfnonetxt"></p>
           <div class="stack">
-            <button class="btn primary" id="mfai">🤖 Que Claude lo calcule</button>
+            <button class="btn primary" id="mfai">🤖 Que la IA lo calcule</button>
             <button class="btn ghost" id="mflabel">📸 Foto de la etiqueta nutricional</button>
             <button class="btn ghost" id="mfown">✍️ Escribir los datos yo</button>
           </div>
@@ -637,7 +646,7 @@
           <div id="mfadd" class="agregados"></div>
         </div>
         <div id="mflabelform" hidden>
-          <p class="muted small">Saca una foto a la tabla <strong>"Información nutricional"</strong> del envase. Claude lee todos los datos (calorías, proteínas, grasas saturadas, mono y poliinsaturadas, trans, colesterol, carbohidratos, azúcares, fibra, sodio, porción y sellos) y guarda el producto en tus alimentos.</p>
+          <p class="muted small">Saca una foto a la tabla <strong>"Información nutricional"</strong> del envase. La IA lee todos los datos (calorías, proteínas, grasas saturadas, mono y poliinsaturadas, trans, colesterol, carbohidratos, azúcares, fibra, sodio, porción y sellos) y guarda el producto en tus alimentos.</p>
           <label class="mf-lbl">Nombre del producto<input id="lname" type="text" placeholder="Ej: Galletas de arroz Líder"></label>
           <label class="btn ghost wide">📸 Sacar o elegir la foto<input type="file" id="lfoto" accept="image/*" hidden></label>
           <img id="lprev" class="food-photo" alt="Foto de la etiqueta" hidden>
@@ -645,7 +654,7 @@
           <p class="small" id="lpc"></p>
         </div>
         <div id="mfaiform" hidden>
-          <p class="muted small">Claude busca los valores de ese producto (también de marcas chilenas) y lo anota solo en tu día. Lo nuevo queda guardado en tus alimentos.</p>
+          <p class="muted small">La IA busca los valores de ese producto (también de marcas chilenas) y lo anota solo en tu día. Lo nuevo queda guardado en tus alimentos.</p>
           <label class="mf-lbl">¿Qué comiste?<input id="aiq" type="text" placeholder="Ej: galletas de arroz Líder"></label>
           <label class="mf-lbl">¿Cuánto?<input id="aicant" type="text" placeholder="Ej: 3 galletas, 1 taza, 150 g"></label>
           <p class="small" id="aipc"></p>
@@ -692,7 +701,7 @@
       $m('#mfaiform').hidden = m !== 'ai';
       $m('#mfownform').hidden = m !== 'own';
       $m('#mflabelform').hidden = m !== 'label';
-      save.textContent = m === 'ai' ? '🤖 Enviar a Claude' : m === 'label' ? '🏷️ Enviar la etiqueta a Claude' : 'Guardar en mi día';
+      save.textContent = m === 'ai' ? '🤖 Enviar a la IA' : m === 'label' ? '🏷️ Enviar la etiqueta a la IA' : 'Guardar en mi día';
       calc();
     };
     // Lo escrito por la persona: total o por 100 g × cantidad
@@ -710,12 +719,10 @@
         save.disabled = !(v > 0);
       } else if (modo === 'ai') {
         save.disabled = !$m('#aiq').value.trim();
-        $m('#aipc').innerHTML = !Sync.conectado() ? '⚠️ Para usar a Claude, conecta este aparato a tu nube (Perfil → Nube).'
-          : Sync.pcEncendido() ? '🟢 Tu PC está encendido: queda anotado en menos de un minuto.' : '⚪ Tu PC está apagado: queda en espera y se anota solo al encenderlo.';
+        $m('#aipc').innerHTML = !Sync.conectado() ? '⚠️ Para usar la IA, conecta este aparato a tu nube (Perfil → Nube).' : '🤖 Queda anotado en unos segundos (funciona aunque el PC esté apagado).';
         if (!Sync.conectado()) save.disabled = true;
       } else if (modo === 'label') {
-        $m('#lpc').innerHTML = !Sync.conectado() ? '⚠️ Para usar a Claude, conecta este aparato a tu nube (Perfil → Nube).'
-          : Sync.pcEncendido() ? '🟢 Tu PC está encendido: queda guardado en menos de un minuto.' : '⚪ Tu PC está apagado: la foto queda en espera y se lee al encenderlo.';
+        $m('#lpc').innerHTML = !Sync.conectado() ? '⚠️ Para usar la IA, conecta este aparato a tu nube (Perfil → Nube).' : '🏷️ Queda guardado en unos segundos (funciona aunque el PC esté apagado).';
         save.disabled = !(Sync.conectado() && $m('#lname').value.trim() && fotoEtiqueta);
       } else if (modo === 'own') {
         const o = propio();
@@ -781,15 +788,14 @@
         const id = 'c' + uidF(), consulta = $m('#aiq').value.trim(), cant = $m('#aicant').value.trim();
         addFood(p.id, [{ id, pend: true, consulta, cant, name: consulta, kcal: 0, meal: mk, src: 'claude' }], dia);
         fotosEnEspera.add(id);
-        Sync.sync();
-        toast(Sync.pcEncendido() ? '🤖 Claude lo está calculando…' : '🤖 Quedó en espera: Claude lo calcula al encender el PC');
+        IA.pedir({ id, tipo: 'texto', consulta, cant, meta: { perfil: p.id, dia, meal: mk, at: Date.now() } });
+        toast('🤖 La IA lo está calculando…');
       } else if (modo === 'label') {
         const id = 'e' + uidF(), nombre = $m('#lname').value.trim(), cant = $m('#lcant').value.trim();
-        Sync.encolarFoto({ id, b64: fotoEtiqueta.split(',')[1], tipo: 'image/jpeg', meta: { tipo: 'etiqueta', nombre, cant, perfil: p.id, dia, meal: mk, at: Date.now() } });
         if (cant) { addFood(p.id, [{ id, pend: true, etiqueta: true, consulta: nombre, cant, name: nombre, kcal: 0, meal: mk, src: 'etiqueta' }], dia); fotosEnEspera.add(id); }
         etiquetasEnEspera.add(NutriMerge.normNombre(nombre));
-        Sync.sync();
-        toast(Sync.pcEncendido() ? '🏷️ Claude está leyendo la etiqueta…' : '🏷️ Quedó en espera: Claude la lee al encender el PC');
+        IA.pedir({ id, tipo: 'etiqueta', b64: fotoEtiqueta.split(',')[1], meta: { nombre, cant, perfil: p.id, dia, meal: mk, at: Date.now() } });
+        toast('🏷️ La IA está leyendo la etiqueta…');
       } else if (modo === 'own') {
         const o = propio(), ml = $m('#ounit').value === 'ml', name = $m('#oname').value.trim();
         const ex100 = {};
@@ -853,7 +859,7 @@
   function pcInfo() {
     if (!Sync.conectado() || !Sync.state.pcVisto) return '';
     return Sync.pcEncendido()
-      ? '🟢 <strong>Tu PC está encendido</strong>: Claude revisa las fotos de platos al momento y todo se copia a OneDrive.'
+      ? '🟢 <strong>Tu PC está encendido</strong>: copia todo a OneDrive y Claude queda de respaldo si la IA de la nube no puede.'
       : `⚪ <strong>Tu PC está apagado</strong>${Sync.state.pc ? ` (última vez ${fmtShort(Sync.state.pc)} ${hora(Sync.state.pc)})` : ''}: las fotos de platos esperan y se anotan solas cuando lo enciendas.`;
   }
 
@@ -1517,13 +1523,13 @@
       </div>
       ${liquidosCard(p, key, n.water)}
       ${esHoy ? '<label class="btn link small center-link">🖼️ O elige una foto de la galería<input type="file" id="foodgal" accept="image/*" hidden></label>' : ''}
-      <p class="muted small center">Claude revisa la foto con tu suscripción, en tu PC, y la anota sola en tu día. Si el PC está apagado, la foto espera hasta que lo enciendas. Es un cálculo aproximado.</p>
+      <p class="muted small center">La IA (Gemini, gratis, desde tu Google Drive) revisa la foto y la anota sola en tu día, aunque el PC esté apagado. Es un cálculo aproximado.</p>
       ${MEALS.map(([mk, ml]) => {
         const list = entries.filter((e) => (MEAL_KEYS.has(e.meal) ? e.meal : 'snack') === mk);
         if (!list.length) return '';
         const kc = list.reduce((t, e) => t + e.kcal, 0);
         return `<div class="card meal"><h3>${ml} <span class="muted small">${Math.round(kc)} kcal</span></h3>
-          <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>${e.etiqueta ? '🏷️' : e.consulta ? '🤖' : '📷'} ${e.err ? esc(e.err) : e.consulta ? `${e.etiqueta ? 'Claude lee la etiqueta' : 'Claude calcula'}: ${esc(e.consulta)}${e.cant ? ' · ' + esc(e.cant) : ''}` : 'Foto en espera de Claude…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : Sync.pcEncendido() ? ' · se está revisando' : ' · se revisa al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
+          <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>${e.etiqueta ? '🏷️' : e.consulta ? '🤖' : '📷'} ${e.err ? esc(e.err) : e.consulta ? `${e.etiqueta ? 'La IA lee la etiqueta' : 'La IA calcula'}: ${esc(e.consulta)}${e.cant ? ' · ' + esc(e.cant) : ''}` : 'Foto en espera de la IA…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : IA.enCola(e.id) ? (navigator.onLine ? ' · unos segundos' : ' · sin internet: se revisa al volver la conexión') : Sync.pcEncendido() ? ' · la revisa Claude en tu PC' : ' · la revisa Claude al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
             : `<li><span ${e.foto ? `class="food-rev" data-rev="${e.foto}" role="button" tabindex="0"` : ''}>${esc(e.name)}<small class="muted"> · ${e.ml ? e.ml + ' ml' : e.gr ? e.gr + ' g' : ''}${e.src === 'foto' ? ' · 📷' : ''}</small></span><strong>${Math.round(e.kcal)} kcal</strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`).join('')}</ul></div>`;
       }).join('')}
       ${entries.length ? '' : `<p class="muted center">${esHoy ? 'Todavía no anotas nada hoy.' : 'No anotaste nada este día. Puedes completarlo ahora.'}</p>`}
