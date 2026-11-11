@@ -474,6 +474,54 @@
     check();
   }
 
+  // Editar un alimento ya anotado: cantidad (todo se recalcula en proporción), comida, cambiarlo por otro o quitarlo.
+  function editarRegistro(p, dia, id) {
+    const e = (S.get(p.id)?.food?.[dia] || []).find((x) => x.id === id);
+    if (!e) return;
+    const q0 = e.ml || e.gr || 0, u = e.ml ? 'ml' : 'g';
+    const NUM = ['kcal', 'p', 'c', 'g', 'fb', 'sat', 'mono', 'poli', 'trans', 'col', 'azu', 'sod'];
+    modal.innerHTML = `
+      <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="Editar">
+        <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
+        <h2>✏️ ${esc(e.name)}</h2>
+        ${q0 ? `<p class="muted small">Cantidad</p><div class="inline-form"><input id="edq" type="number" inputmode="decimal" min="0" value="${q0}"><span class="mf-unit">${u}</span></div>`
+          : `<p class="muted small">Calorías</p><div class="inline-form"><input id="edk" type="number" inputmode="decimal" min="0" value="${Math.round(e.kcal || 0)}"><span class="mf-unit">kcal</span></div>`}
+        <p class="food-total"><strong id="edkc">${Math.round(e.kcal || 0)}</strong> kcal <span class="muted small" id="edmac"></span></p>
+        <label class="meal-sel">Comida: <select id="edmeal">${MEALS.map(([k, l]) => `<option value="${k}" ${k === e.meal ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <button class="btn primary wide" id="edsave">Guardar cambios</button>
+        <div class="stack">
+          <button class="btn ghost" id="edswap">🔁 Cambiar por otro alimento</button>
+          <button class="btn ghost danger-txt" id="eddel">🗑️ Quitar de mi día</button>
+        </div>
+      </div>`;
+    modal.classList.remove('hidden');
+    const $e = (s) => modal.querySelector(s);
+    const factor = () => (q0 ? Math.max(0, parseFloat(String($e('#edq').value).replace(',', '.')) || 0) / q0 : (e.kcal ? Math.max(0, +$e('#edk').value || 0) / e.kcal : 1));
+    const pintar = () => {
+      const k = factor();
+      $e('#edkc').textContent = q0 ? Math.round((e.kcal || 0) * k) : Math.round(+$e('#edk').value || 0);
+      $e('#edmac').textContent = `· Prot ${Math.round((e.p || 0) * k)} · Carb ${Math.round((e.c || 0) * k)} · Grasa ${Math.round((e.g || 0) * k)} g`;
+    };
+    (q0 ? $e('#edq') : $e('#edk')).oninput = pintar;
+    pintar();
+    $e('.m-close').onclick = closeModal;
+    $e('#edsave').onclick = () => {
+      const k = factor(), now = Date.now(), mk = $e('#edmeal').value;
+      S.update(p.id, (x) => {
+        const r = (x.food?.[dia] || []).find((y) => y.id === id);
+        if (!r) return;
+        for (const f of NUM) if (typeof r[f] === 'number') r[f] = f === 'kcal' ? Math.round(r[f] * k) : Math.round(r[f] * k * 10) / 10;
+        if (!q0) r.kcal = Math.round(+$e('#edk').value || 0);
+        if (r.otros) r.otros = Object.fromEntries(Object.entries(r.otros).map(([n, [v, un]]) => [n, [Math.round(v * k * 100) / 100, un]]));
+        if (q0) { if (r.ml) r.ml = Math.round(q0 * k * 10) / 10; else r.gr = Math.round(q0 * k * 10) / 10; }
+        r.meal = mk; r.t = now;
+      }, false);
+      closeModal(); renderPlan(p.id, 'nutri');
+    };
+    $e('#eddel').onclick = () => { removeFood(p.id, dia, id); closeModal(); renderPlan(p.id, 'nutri'); };
+    $e('#edswap').onclick = () => openManualFood(p, { meal: e.meal, reemplaza: id, q: e.name.split(' · ')[0] });
+  }
+
   // Lo que más se le olvida a la IA en una foto: aliños y salsas. Cada toque suma una porción.
   const REV_CHIPS = [['Aceite', 'cda', 10, 'Aceite vegetal'], ['Aceite de oliva', 'cda', 10, 'Aceite de oliva'], ['Limón', 'chorrito', 10, 'Limón (jugo)'],
     ['Vinagre', 'cda', 10, 'Vinagre'], ['Sal', 'pizca', 1, 'Sal'], ['Mayonesa', 'cda', 15, 'Mayonesa'], ['Mantequilla', 'cdta', 5, 'Mantequilla'],
@@ -497,6 +545,7 @@
     }));
     if (!items.length) return closeModal();
     const meal = items.length ? list.find((e) => e.id === items[0].eid).meal : mealByHour();
+    let cambiando = -1; // alimento que se está reemplazando por otro
     const paint = () => {
       const total = items.filter((x) => x.on).reduce((t, x) => t + x.kcal, 0);
       modal.innerHTML = `
@@ -509,9 +558,10 @@
           ${r.nota ? `<p class="muted small">💡 ${esc(r.nota)}</p>` : ''}
           <ul class="food-items">${items.map((x, i) => `
             <li class="${x.on ? '' : 'off'}">
-              <label class="fi-check"><input type="checkbox" data-on="${i}" ${x.on ? 'checked' : ''}></label>
-              <div class="fi-main"><strong>${esc(x.nombre)}</strong><span class="muted small">${x.kcal} kcal · Prot ${Math.round(x.proteina)} · Carb ${Math.round(x.carbohidratos)} · Grasa ${Math.round(x.grasa)} · Fibra ${Math.round(x.fibra || 0)} g</span></div>
-              ${x.base ? `<div class="fi-qty"><input type="number" inputmode="decimal" min="0" data-q="${i}" value="${x.ml || x.gramos}"><span>${x.ml ? 'ml' : 'g'}</span></div>` : ''}
+              <div class="fi-main"><strong>${esc(x.nombre)}</strong>${x.reemplaza ? ' <span class="pill ok">corregido</span>' : x.nuevo ? ' <span class="pill ok">agregado</span>' : ''}<span class="muted small">${x.kcal} kcal · Prot ${Math.round(x.proteina)} · Carb ${Math.round(x.carbohidratos)} · Grasa ${Math.round(x.grasa)} · Fibra ${Math.round(x.fibra || 0)} g</span>
+                <div class="fi-acts">${x.on ? `<button class="fi-btn" data-cambiar="${i}">✏️ Cambiar</button><button class="fi-btn" data-quitar="${i}">🗑️ Quitar</button>` : `<button class="fi-btn" data-quitar="${i}">↩️ Volver a poner</button>`}</div></div>
+              ${x.base && x.on ? `<div class="fi-qty"><input type="number" inputmode="decimal" min="0" data-q="${i}" value="${x.ml || x.gramos}"><span>${x.ml ? 'ml' : 'g'}</span></div>` : ''}
+              ${cambiando === i ? `<div class="fi-edit"><p class="small">¿Qué era en realidad? <span class="muted">(se mantienen los ${x.ml || x.gramos || ''} ${x.ml ? 'ml' : 'g'})</span></p><input id="fieq" type="search" placeholder="🔍 Ej: papa, zanahoria, arroz" autocomplete="off"><ul class="food-search" id="fieres"></ul></div>` : ''}
             </li>`).join('')}</ul>
           <div class="rev-add">
             <p class="small"><strong>¿Faltó algo?</strong> <span class="muted">Toca para sumar una porción, o busca otro alimento.</span></p>
@@ -544,11 +594,26 @@
       };
       rq.oninput = lista;
       cargarProductos();
-      modal.querySelectorAll('[data-on]').forEach((c) => c.onchange = () => { items[+c.dataset.on].on = c.checked; paint(); });
+      modal.querySelectorAll('[data-quitar]').forEach((b) => b.onclick = () => { const x = items[+b.dataset.quitar]; x.on = !x.on; cambiando = -1; paint(); });
+      modal.querySelectorAll('[data-cambiar]').forEach((b) => b.onclick = () => { cambiando = cambiando === +b.dataset.cambiar ? -1 : +b.dataset.cambiar; paint(); const q = modal.querySelector('#fieq'); if (q) q.focus(); });
+      const fq = modal.querySelector('#fieq');
+      if (fq) fq.oninput = () => {
+        const found = fq.value.trim().length >= 2 ? buscarAlimentos(fq.value.trim()).slice(0, 8) : [];
+        const ul = modal.querySelector('#fieres');
+        ul.innerHTML = found.map((f, j) => `<li><button data-fe="${j}"><span>${esc(f.n)}${f.marca ? ` <span class="muted small">· ${esc(f.marca)}</span>` : ''}</span> <span class="muted small">${f.kcal} kcal / 100 ${f.ml ? 'ml' : 'g'}</span></button></li>`).join('');
+        ul.querySelectorAll('[data-fe]').forEach((b) => b.onclick = () => {
+          const viejo = items[cambiando], f = found[+b.dataset.fe];
+          const q = viejo.ml || viejo.gramos || f.porcion || 100;
+          // El nuevo reemplaza al equivocado (que se borra al guardar)
+          items[cambiando] = Object.assign(itemDe(f, q), { reemplaza: viejo.reemplaza || viejo.eid || null });
+          cambiando = -1;
+          paint();
+        });
+      };
       modal.querySelectorAll('[data-q]').forEach((inp) => inp.onchange = () => {
         const x = items[+inp.dataset.q], v = Math.max(0, parseFloat(inp.value.replace(',', '.')) || 0);
         // Lo agregado se recalcula desde la base (exacto); lo de la IA, en proporción a lo que estimó
-        if (x.nuevo) { items[+inp.dataset.q] = Object.assign(itemDe(x.ali, v), { chip: x.chip, veces: x.veces }); return paint(); }
+        if (x.nuevo) { items[+inp.dataset.q] = Object.assign(itemDe(x.ali, v), { chip: x.chip, veces: x.veces, reemplaza: x.reemplaza }); return paint(); }
         const k = x.base ? v / x.base : 1;
         // Las calorías y macros se escalan desde los valores que dio Claude
         x.kcal = Math.round(x.kcal0 * k);
@@ -560,6 +625,7 @@
         const mk = modal.querySelector('#fmeal').value, now = Date.now();
         S.update(p.id, (x) => {
           for (const it of items) {
+            if (it.reemplaza) { const viejo = (x.food?.[dia] || []).find((y) => y.id === it.reemplaza); if (viejo && !viejo.deleted) Object.assign(viejo, { deleted: true, t: now }); }
             if (it.nuevo) {
               if (!it.on) continue;
               const q = it.ml || it.gramos || 0;
@@ -914,9 +980,12 @@
           S.setFood(NutriMerge.normNombre(name), { n: name, kcal: Math.round(o.k100), p: v('#op'), c: v('#oc'), g: v('#og'), fb: v('#ofb'), ml, porcion: o.qty > 0 ? Math.round(o.qty) : 100, u: 'agregado por ti', src: 'mio', ...ex100, t: Date.now() });
         }
       }
+      if (opts.reemplaza) removeFood(p.id, dia, opts.reemplaza); // "Cambiar por otro alimento": se quita el anterior
       closeModal();
       renderPlan(p.id, 'nutri');
     };
+    if (opts.q) q.value = opts.q;
+    if (opts.reemplaza) $m('h2').innerHTML = '🔁 Cambiar por otro alimento';
     list();
     if (opts.elegir) {
       q.value = opts.elegir; list();
@@ -1638,7 +1707,7 @@
         const kc = list.reduce((t, e) => t + e.kcal, 0);
         return `<div class="card meal"><h3>${ml} <span class="muted small">${Math.round(kc)} kcal</span></h3>
           <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>${e.etiqueta ? '🏷️' : e.consulta ? '🤖' : '📷'} ${e.err ? esc(e.err) : e.consulta ? `${e.etiqueta ? 'La IA lee la etiqueta' : 'La IA calcula'}: ${esc(e.consulta)}${e.cant ? ' · ' + esc(e.cant) : ''}` : 'Foto en espera de la IA…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : IA.enCola(e.id) ? (IA.motivo(e.id) ? ' · ' + esc(IA.motivo(e.id)) : navigator.onLine ? ' · unos segundos' : ' · sin internet: se revisa al volver la conexión') : Sync.pcEncendido() ? ' · la revisa Claude en tu PC' : ' · la revisa Claude al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
-            : `<li><span ${e.foto ? `class="food-rev" data-rev="${e.foto}" role="button" tabindex="0"` : ''}>${esc(e.name)}<small class="muted"> · ${e.ml ? e.ml + ' ml' : e.gr ? e.gr + ' g' : ''}${e.src === 'foto' ? ' · 📷' : ''}</small></span><strong>${Math.round(e.kcal)} kcal</strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`).join('')}</ul></div>`;
+            : `<li><span class="food-rev" ${e.foto ? `data-rev="${e.foto}"` : `data-edit="${e.id}"`} role="button" tabindex="0">${esc(e.name)}<small class="muted"> · ${e.ml ? e.ml + ' ml' : e.gr ? e.gr + ' g' : ''}${e.src === 'foto' ? ' · 📷' : ''}</small></span><strong>${Math.round(e.kcal)} kcal</strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`).join('')}</ul></div>`;
       }).join('')}
       ${entries.length ? '' : `<p class="muted center">${esHoy ? 'Todavía no anotas nada hoy.' : 'No anotaste nada este día. Puedes completarlo ahora.'}</p>`}
       <div class="card"><h3>${fin === hoy ? 'Últimos 7 días' : 'Esa semana'} <span class="muted small">toca un día para verlo</span></h3>
@@ -1863,6 +1932,7 @@
       $('#foodphoto').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) analyzePhoto(p, f); };
       $('#foodgal').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) fotoDeFototeca(p, f); };
       $$('[data-rev]').forEach((el) => el.onclick = () => showFoodReview(p, el.dataset.rev, k, null));
+      $$('[data-edit]').forEach((el) => el.onclick = () => editarRegistro(p, k, el.dataset.edit));
       dayEntries(p, k).filter((e) => e.pend).forEach((e) => fotosEnEspera.add(e.id));
     }
     if (tab === 'plan') {
