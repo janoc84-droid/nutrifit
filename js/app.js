@@ -474,7 +474,20 @@
     check();
   }
 
-  // Revisión: Claude ya anotó el plato; aquí se puede cambiar la cantidad (las calorías se ajustan solas) o quitar algo.
+  // Lo que más se le olvida a la IA en una foto: aliños y salsas. Cada toque suma una porción.
+  const REV_CHIPS = [['Aceite', 'cda', 10, 'Aceite vegetal'], ['Aceite de oliva', 'cda', 10, 'Aceite de oliva'], ['Limón', 'chorrito', 10, 'Limón (jugo)'],
+    ['Vinagre', 'cda', 10, 'Vinagre'], ['Sal', 'pizca', 1, 'Sal'], ['Mayonesa', 'cda', 15, 'Mayonesa'], ['Mantequilla', 'cdta', 5, 'Mantequilla'],
+    ['Pebre', 'cda', 15, 'Pebre'], ['Ketchup', 'cda', 15, 'Ketchup']];
+  // Item de la revisión a partir de un alimento de la base y una cantidad
+  function itemDe(f, q) {
+    const k = q / 100;
+    const it = { nombre: f.n + (f.marca ? ' · ' + f.marca : ''), gramos: f.ml ? null : q, ml: f.ml ? q : null, kcal: Math.round(f.kcal * k), proteina: Math.round(f.p * k * 10) / 10, carbohidratos: Math.round(f.c * k * 10) / 10, grasa: Math.round(f.g * k * 10) / 10, fibra: Math.round((f.fb || 0) * k * 10) / 10, base: q, on: true, nuevo: true, ali: f };
+    it.kcal0 = it.kcal; ['proteina', 'carbohidratos', 'grasa', 'fibra'].forEach((x) => { it[x + '0'] = it[x]; });
+    return it;
+  }
+
+  // Revisión: la IA ya anotó el plato; aquí se puede cambiar la cantidad (las calorías se ajustan solas), quitar algo
+  // o agregar lo que no vio (limón, aceite, otro alimento).
   function showFoodReview(p, fotoId, dia, dataUrl) {
     const list = S.get(p.id)?.food?.[dia] || [];
     const r = list.find((e) => e.id === fotoId) || {};
@@ -500,13 +513,42 @@
               <div class="fi-main"><strong>${esc(x.nombre)}</strong><span class="muted small">${x.kcal} kcal · Prot ${Math.round(x.proteina)} · Carb ${Math.round(x.carbohidratos)} · Grasa ${Math.round(x.grasa)} · Fibra ${Math.round(x.fibra || 0)} g</span></div>
               ${x.base ? `<div class="fi-qty"><input type="number" inputmode="decimal" min="0" data-q="${i}" value="${x.ml || x.gramos}"><span>${x.ml ? 'ml' : 'g'}</span></div>` : ''}
             </li>`).join('')}</ul>
+          <div class="rev-add">
+            <p class="small"><strong>¿Faltó algo?</strong> <span class="muted">Toca para sumar una porción, o busca otro alimento.</span></p>
+            <div class="ag-chips">${REV_CHIPS.map(([n, u]) => { const c = items.find((x) => x.nuevo && x.chip === n); return `<button class="ag-chip ${c ? 'on' : ''}" data-rc="${esc(n)}">+ ${esc(n)} <small>${esc(u)}</small>${c ? `<b>×${c.veces}</b>` : ''}</button>`; }).join('')}</div>
+            <input id="revq" type="search" placeholder="🔍 Agregar otro alimento (ej: tomate, pan, palta)" autocomplete="off">
+            <ul class="food-search" id="revres"></ul>
+          </div>
           <label class="meal-sel">Comida: <select id="fmeal">${MEALS.map(([k, l]) => `<option value="${k}" ${k === meal ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <button class="btn primary wide" id="fsave">Listo</button>
         </div>`;
       modal.querySelector('.m-close').onclick = closeModal;
+      // Aliños rápidos: cada toque suma una porción al mismo item
+      modal.querySelectorAll('[data-rc]').forEach((b) => b.onclick = () => {
+        const [n, , g, base] = REV_CHIPS.find(([x]) => x === b.dataset.rc);
+        const f = window.FOODS.find((x) => x.n === base);
+        if (!f) return;
+        const c = items.find((x) => x.nuevo && x.chip === n);
+        const veces = (c ? c.veces : 0) + 1;
+        const it = Object.assign(itemDe(f, g * veces), { chip: n, veces });
+        if (c) items[items.indexOf(c)] = it; else items.push(it);
+        paint();
+      });
+      // Buscar cualquier otro alimento de la base (comunes, tuyos y productos de Chile)
+      const rq = modal.querySelector('#revq'), rres = modal.querySelector('#revres');
+      const lista = () => {
+        const t = rq.value.trim();
+        const found = t.length >= 2 ? buscarAlimentos(t).slice(0, 8) : [];
+        rres.innerHTML = found.map((f, i) => `<li><button data-rf="${i}"><span>${esc(f.n)}${f.marca ? ` <span class="muted small">· ${esc(f.marca)}</span>` : ''}</span> <span class="muted small">${f.kcal} kcal / 100 ${f.ml ? 'ml' : 'g'}</span></button></li>`).join('');
+        rres.querySelectorAll('[data-rf]').forEach((b) => b.onclick = () => { items.push(itemDe(found[+b.dataset.rf], found[+b.dataset.rf].porcion || 100)); paint(); });
+      };
+      rq.oninput = lista;
+      cargarProductos();
       modal.querySelectorAll('[data-on]').forEach((c) => c.onchange = () => { items[+c.dataset.on].on = c.checked; paint(); });
       modal.querySelectorAll('[data-q]').forEach((inp) => inp.onchange = () => {
         const x = items[+inp.dataset.q], v = Math.max(0, parseFloat(inp.value.replace(',', '.')) || 0);
+        // Lo agregado se recalcula desde la base (exacto); lo de la IA, en proporción a lo que estimó
+        if (x.nuevo) { items[+inp.dataset.q] = Object.assign(itemDe(x.ali, v), { chip: x.chip, veces: x.veces }); return paint(); }
         const k = x.base ? v / x.base : 1;
         // Las calorías y macros se escalan desde los valores que dio Claude
         x.kcal = Math.round(x.kcal0 * k);
@@ -518,6 +560,14 @@
         const mk = modal.querySelector('#fmeal').value, now = Date.now();
         S.update(p.id, (x) => {
           for (const it of items) {
+            if (it.nuevo) {
+              if (!it.on) continue;
+              const q = it.ml || it.gramos || 0;
+              x.food[dia] = x.food[dia] || [];
+              x.food[dia].push({ id: `${fotoId}-a${uidF()}`, at: now, t: now, meal: mk, src: 'foto', foto: fotoId, agregado: true,
+                name: it.nombre, gr: it.ml ? null : q, ml: it.ml ? q : null, kcal: it.kcal, p: it.proteina, c: it.carbohidratos, g: it.grasa, fb: it.fibra, ...extrasDe(it.ali, q / 100) });
+              continue;
+            }
             const e = (x.food?.[dia] || []).find((y) => y.id === it.eid);
             if (!e) continue;
             const nuevo = it.on
@@ -644,7 +694,7 @@
   const AGREGADOS = {
     liquido: [['Azúcar', 'cdta', 5, 'Azúcar'], ['Stevia', 'gotas', 1, 'Stevia líquida (gotas)'], ['Miel', 'cdta', 7, 'Miel'],
       ['Leche', 'chorrito 30 ml', 30, 'Leche semidescremada'], ['Crema para café', 'cdta', 5, 'Sustituto de crema para café (polvo)']],
-    solido: [['Aceite', 'cda', 10, 'Aceite vegetal'], ['Aceite de oliva', 'cda', 10, 'Aceite de oliva'], ['Mantequilla', 'cdta', 5, 'Mantequilla'],
+    solido: [['Aceite', 'cda', 10, 'Aceite vegetal'], ['Aceite de oliva', 'cda', 10, 'Aceite de oliva'], ['Limón', 'chorrito', 10, 'Limón (jugo)'], ['Mantequilla', 'cdta', 5, 'Mantequilla'],
       ['Mayonesa', 'cda', 15, 'Mayonesa'], ['Sal', 'pizca', 1, 'Sal']],
   };
   const alimentoBase = (n) => window.FOODS.find((f) => f.n === n);

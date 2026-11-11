@@ -336,3 +336,14 @@ for (const f of window.FOODS) {
   if (f.n === 'Azúcar') f.u = '1 cucharadita ≈ 5 g';
   if (f.n === 'Miel') f.u = '1 cucharadita ≈ 7 g';
 }
+
+// Aliños que suelen faltar en las fotos (agregados el 11-11-2026)
+window.FOODS.push(
+  { n: 'Limón (jugo)', ml: true, kcal: 22, p: 0.4, c: 6.9, g: 0.2, fb: 0.3, porcion: 10, u: '1 chorrito ≈ 10 ml' },
+  { n: 'Limón (fruta)', kcal: 29, p: 1.1, c: 9.3, g: 0.3, fb: 2.8, porcion: 60, u: '1 limón ≈ 60 g' },
+  { n: 'Vinagre', ml: true, kcal: 18, p: 0, c: 0.04, g: 0, porcion: 10, u: '1 cucharada ≈ 10 ml' },
+  { n: 'Aliño / vinagreta (aceite y vinagre)', kcal: 450, p: 0, c: 3, g: 48, porcion: 15, u: '1 cucharada ≈ 15 g' },
+  { n: 'Aliño light envasado', kcal: 90, p: 0.5, c: 8, g: 6, porcion: 15, u: '' },
+  { n: 'Merkén', kcal: 300, p: 12, c: 50, g: 10, fb: 30, porcion: 1, u: '1 pizca' },
+  { n: 'Ají / salsa picante', kcal: 30, p: 1, c: 6, g: 0.5, porcion: 10, u: '' },
+);
