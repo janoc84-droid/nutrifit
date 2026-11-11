@@ -629,3 +629,34 @@ body.has-nav .timer { bottom: calc(74px + env(safe-area-inset-bottom)); }
 .toast { position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60; max-width: min(92vw, 460px); background: var(--primary); color: #fff; padding: 12px 16px; border-radius: 14px; box-shadow: var(--shadow); font-size: 14px; font-weight: 600; transition: opacity .5s, transform .5s; }
 .toast.warn { background: #A86A12; }
 .toast.out { opacity: 0; transform: translateX(-50%) translateY(10px); }
+
+/* Ir a otro día (Entrenamiento, Nutrición, Progreso) */
+.day-nav { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; }
+.day-nav .icon-btn { flex: none; width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--surface); box-shadow: var(--shadow); font-size: 24px; line-height: 1; color: var(--ink); }
+.day-nav .icon-btn:disabled { opacity: .35; }
+.day-pick { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; min-height: 42px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); font-weight: 700; font-size: 15px; overflow: hidden; }
+.day-pick input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.day-pick input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
+.day-past { margin: 0 0 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.day-past .btn.link { padding: 0; font-weight: 700; }
+.week-bars button.wb { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; border-radius: 8px; }
+.wb.sel { background: var(--accent-soft) !important; }
+.wb.sel small { font-weight: 800; color: var(--ink); }
+.wb.empty small { color: var(--bad); }
+.week-bars { padding-bottom: 30px; }
+.wb small { bottom: -30px; line-height: 1.15; text-align: center; }
+.wb-goal { margin-bottom: 30px; }
+.warn-txt { color: var(--ink-2); margin-top: 10px; }
+.warn-txt .btn.link { padding: 0 2px; font-weight: 700; }
+.center-link { display: block; text-align: center; margin: -4px auto 6px; }
+.mark-past { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; }
+.hist li { padding: 0; }
+.hist-row { width: 100%; display: grid; grid-template-columns: 5.2em 1fr auto; gap: 8px; align-items: center; border: 0; background: none; font: inherit; color: inherit; text-align: left; padding: 9px 2px; cursor: pointer; }
+.hist-day { font-weight: 700; }
+.hist-tr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.hist-tr.ok { color: var(--leaf-text); }
+.hist-kc { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.hist-kc.bad { color: var(--bad); }
+#wdate { flex: 1 1 9em; min-width: 0; }
+#wkg { flex: 1 1 5.5em; min-width: 5.5em; }
+.inline-form:has(#wdate) { flex-wrap: wrap; }

@@ -207,6 +207,7 @@
       bindHead();
       return;
     }
+    if (diaSel() !== dayKey()) return renderPastDay(cur, diaSel());
     const nx = nextSession(cur);
     const hour = new Date().getHours();
     const hello = hour < 12 ? 'Buenos días' : hour < 20 ? 'Buenas tardes' : 'Buenas noches';
@@ -216,6 +217,7 @@
       <div class="screen home">
         ${trainHead('hoy', cur)}
         <section class="today">
+          ${dayNavHTML(dayKey())}
           <p class="hello">${hello}, <strong>${esc(cur.answers.name)}</strong> 👋</p>
           ${nx ? `
             <div class="today-card">
@@ -240,7 +242,54 @@
         </section>
       </div>`;
     bindHead();
+    bindDayNav(renderHome);
     mountAnims();
+  }
+
+  // Un día anterior: qué se entrenó y qué se comió; se puede marcar lo que faltó anotar.
+  function renderPastDay(cur, k) {
+    const hechos = entrenosDelDia(cur, k);
+    const pendientes = [];
+    for (const wk of cur.plan.weeks) wk.days.forEach((d, i) => { if (!cur.log[`${cur.plan.block}-${wk.week}-${i}`]?.done) pendientes.push({ w: wk.week, d: i, day: d }); });
+    const goal = P.nutrition(cur.answers, P.metrics(cur.answers)).kcal;
+    const eaten = dayTotals(cur, k).kcal;
+    $app.innerHTML = `
+      <div class="screen home">
+        ${trainHead('hoy', cur)}
+        <section class="today">
+          ${dayNavHTML(k, 'Puedes revisarlo o anotar lo que te faltó.')}
+          <div class="card">
+            <h3>🏋️ Entrenamiento de ese día</h3>
+            ${hechos.length ? `<ul class="list compact">${hechos.map((h) => `<li><span>✓ ${esc(h.name)}</span><strong>${h.min ? '~' + h.min + ' min' : ''}</strong><button class="food-del" data-undo="${esc(h.key)}" aria-label="Quitar">×</button></li>`).join('')}</ul>`
+              : '<p class="muted">No hay entrenamientos anotados ese día.</p>'}
+          </div>
+          <div class="card">
+            <h3>¿Entrenaste y no lo marcaste?</h3>
+            ${pendientes.length ? `<p class="muted small">Toca la sesión que hiciste y queda anotada en ese día.</p>
+            <div class="stack">${pendientes.slice(0, 6).map((x) => `<button class="btn ghost mark-past" data-marcar="${x.w}-${x.d}">✓ ${esc(x.day.name)} <small class="muted">Semana ${x.w} · ~${x.day.minutes} min</small></button>`).join('')}</div>` : '<p class="muted small">Todas las sesiones de este bloque ya están hechas.</p>'}
+            <details class="mf-custom"><summary>Otra actividad (rutina, caminata, deporte…)</summary>
+              <input id="oname" type="text" placeholder="¿Qué hiciste? (ej: rutina TRX, caminata)">
+              <div class="inline-form"><input id="omin" type="number" inputmode="numeric" min="1" placeholder="Minutos"><button class="btn primary small" id="osave">Guardar</button></div>
+            </details>
+          </div>
+          <a class="kcal-today" href="#/plan/${cur.id}?tab=nutri"><span>🍽️ Comido ese día</span><strong>${Math.round(eaten)} / ${goal} kcal</strong><div class="bar ${eaten > goal ? 'over' : ''}"><i style="width:${Math.min(100, Math.round((eaten / goal) * 100))}%"></i></div><small>Toca para revisar o completar las comidas de ese día</small></a>
+        </section>
+      </div>`;
+    const marcar = (key, fn) => { S.update(cur.id, (x) => { const l = x.log[key] || (x.log[key] = { sets: {} }); fn(l); l.t = Date.now(); }); renderHome(); };
+    $$('[data-marcar]').forEach((b) => b.onclick = () => {
+      const [w, d] = b.dataset.marcar.split('-').map(Number);
+      const day = cur.plan.weeks[w - 1].days[d];
+      marcar(`${cur.plan.block}-${w}-${d}`, (l) => { l.done = true; l.date = horaDelDia(k); l.min = day.minutes; });
+      toast(`✅ ${day.name} quedó anotada (${diaNombre(k, true).toLowerCase()})`);
+    });
+    $$('[data-undo]').forEach((b) => b.onclick = () => marcar(b.dataset.undo, (l) => { l.done = false; }));
+    $('#osave').onclick = () => {
+      const name = $('#oname').value.trim(), min = Math.round(+$('#omin').value);
+      if (!name || !(min > 0)) return toast('Escribe qué hiciste y cuántos minutos', 'warn');
+      marcar(`X-${uidF()}`, (l) => { l.done = true; l.date = horaDelDia(k); l.min = min; l.routine = name; });
+    };
+    bindHead();
+    bindDayNav(renderHome);
   }
 
   async function importFile(e) {
@@ -316,9 +365,9 @@
       modal.querySelector('#fmanual').onclick = () => openManualFood(p);
       return;
     }
-    const id = 'f' + uidF(), meal = mealByHour(), at = Date.now(), dia = dayKey();
+    const id = 'f' + uidF(), meal = mealByHour(), at = Date.now(), dia = diaSel();
     Sync.encolarFoto({ id, b64: dataUrl.split(',')[1], tipo: 'image/jpeg', meta: { perfil: p.id, dia, meal, at } });
-    addFood(p.id, [{ id, pend: true, name: 'Foto del plato', kcal: 0, meal, src: 'foto', at }]);
+    addFood(p.id, [{ id, pend: true, name: 'Foto del plato', kcal: 0, meal, src: 'foto', at }], dia);
     fotosEnEspera.add(id);
     Sync.sync();
     waitPhoto(p, id, dia, dataUrl);
@@ -449,11 +498,11 @@
 
   // ---------- Anotar a mano (gramos o ml) ----------
   function openManualFood(p) {
-    const meal = mealByHour();
+    const meal = mealByHour(), dia = diaSel();
     modal.innerHTML = `
       <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="Anotar comida">
         <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
-        <h2>✍️ Anotar comida</h2>
+        <h2>✍️ Anotar comida${dia === dayKey() ? '' : ` <span class="muted small">· ${esc(diaNombre(dia, true))}</span>`}</h2>
         <input id="mfq" type="search" placeholder="🔍 Busca un alimento (ej: marraqueta, leche, palta)" autocomplete="off">
         <ul class="food-search" id="mfres"></ul>
         <div id="mfform" hidden>
@@ -508,9 +557,9 @@
       const mk = modal.querySelector('#mfmeal').value;
       if (sel) {
         const v = Math.max(0, parseFloat(modal.querySelector('#mfqty').value) || 0), k = v / 100;
-        addFood(p.id, [{ name: sel.n, gr: sel.ml ? null : v, ml: sel.ml ? v : null, kcal: Math.round(sel.kcal * k), p: Math.round(sel.p * k), c: Math.round(sel.c * k), g: Math.round(sel.g * k), fb: Math.round((sel.fb || 0) * k * 10) / 10, meal: mk, src: 'manual' }]);
+        addFood(p.id, [{ name: sel.n, gr: sel.ml ? null : v, ml: sel.ml ? v : null, kcal: Math.round(sel.kcal * k), p: Math.round(sel.p * k), c: Math.round(sel.c * k), g: Math.round(sel.g * k), fb: Math.round((sel.fb || 0) * k * 10) / 10, meal: mk, src: 'manual' }], dia);
       } else {
-        addFood(p.id, [{ name: modal.querySelector('#mcname').value.trim(), kcal: Math.round(+modal.querySelector('#mckcal').value), p: 0, c: 0, g: 0, meal: mk, src: 'manual' }]);
+        addFood(p.id, [{ name: modal.querySelector('#mcname').value.trim(), kcal: Math.round(+modal.querySelector('#mckcal').value), p: 0, c: 0, g: 0, meal: mk, src: 'manual' }], dia);
       }
       closeModal();
       renderPlan(p.id, 'nutri');
@@ -1038,13 +1087,69 @@
   const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const MEALS = [['desayuno', '☕ Desayuno'], ['almuerzo', '🍽️ Almuerzo'], ['once', '🥪 Once'], ['cena', '🌙 Cena'], ['snack', '🍎 Snack']];
   function mealByHour(h = new Date().getHours()) { return h < 11 ? 'desayuno' : h < 16 ? 'almuerzo' : h < 19 ? 'once' : h < 23 ? 'cena' : 'snack'; }
+  // Día que se está mirando en Nutrición (hoy, o uno anterior para revisar o completar)
+  const fromKey = (k) => { const [y, mo, d] = k.split('-').map(Number); return new Date(y, mo - 1, d); };
+  function diaSel() { const hoy = dayKey(); return ui.dia && ui.dia < hoy ? ui.dia : hoy; }
+  function diaNombre(k, largo) {
+    const hoy = dayKey(), ay = new Date(); ay.setDate(ay.getDate() - 1);
+    if (k === hoy) return 'Hoy';
+    if (k === dayKey(ay)) return largo ? 'Ayer, ' + fromKey(k).toLocaleDateString('es', { day: 'numeric', month: 'long' }) : 'Ayer';
+    const t = fromKey(k).toLocaleDateString('es', largo ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'short', day: 'numeric', month: 'short' });
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  function moverDia(k, n) { const d = fromKey(k); d.setDate(d.getDate() + n); return dayKey(d); }
+  // Hora para lo que se anota en un día anterior (mediodía de ese día); hoy usa la hora real.
+  const horaDelDia = (k) => (k === dayKey() ? Date.now() : fromKey(k).getTime() + 12 * 3600000);
+  // Barra para ir a otro día (en Entrenamiento, Nutrición y Progreso). Al abrir la app siempre parte en hoy.
+  function dayNavHTML(key, aviso = 'Lo que anotes queda guardado en ese día.') {
+    const hoy = dayKey(), esHoy = key === hoy;
+    return `
+      <div class="day-nav">
+        <button class="icon-btn" id="dprev" aria-label="Día anterior">‹</button>
+        <label class="day-pick"><span>📅 ${esc(diaNombre(key, true))}</span><input type="date" id="dpick" value="${key}" max="${hoy}" aria-label="Elegir una fecha"></label>
+        <button class="icon-btn" id="dnext" aria-label="Día siguiente" ${esHoy ? 'disabled' : ''}>›</button>
+      </div>
+      ${esHoy ? '' : `<div class="note day-past">🕓 Estás viendo un día anterior. ${esc(aviso)} <button class="btn link" id="dhoy">Volver a hoy</button></div>`}`;
+  }
+  function bindDayNav(redraw) {
+    const k = diaSel();
+    const ir = (d) => { ui.dia = d >= dayKey() ? null : d; redraw(); };
+    const b = (sel, fn) => { const el = document.querySelector(sel); if (el) el.onclick = fn; };
+    b('#dprev', () => ir(moverDia(k, -1)));
+    b('#dnext', () => ir(moverDia(k, 1)));
+    b('#dhoy', () => ir(dayKey()));
+    const pick = document.getElementById('dpick');
+    if (pick) pick.onchange = (e) => { if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) ir(e.target.value); };
+    $$('[data-dia]').forEach((el) => el.onclick = () => ir(el.dataset.dia));
+  }
+  // Si la app queda en segundo plano más de 20 minutos, al volver se muestra hoy.
+  let ocultoDesde = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { ocultoDesde = Date.now(); return; }
+    if (ui.dia && ocultoDesde && Date.now() - ocultoDesde > 20 * 60000) {
+      ui.dia = null;
+      if (modal.classList.contains('hidden') && !/^#\/(guide|routine|quiz|session)/.test(location.hash)) route();
+    }
+  });
+  // Entrenamientos marcados como hechos en un día (sesiones del plan, rutinas y otras actividades)
+  function entrenosDelDia(p, k) {
+    return Object.entries(p.log || {}).filter(([, l]) => l.done && l.date && dayKey(new Date(l.date)) === k).map(([key, l]) => {
+      let name = l.routine, min = l.min;
+      if (!name) {
+        const [b, w, d] = key.split('-').map(Number);
+        const day = b === p.plan.block ? p.plan.weeks[w - 1]?.days[d] : null;
+        name = day ? `${day.name} · semana ${w}` : `Sesión del bloque ${b}, semana ${w}`;
+        min = min || day?.minutes;
+      }
+      return { key, name, min };
+    });
+  }
   function dayEntries(p, key = dayKey()) { return ((p.food || {})[key] || []).filter((e) => !e.deleted); }
   function dayTotals(p, key) {
     return dayEntries(p, key).reduce((t, e) => ({ kcal: t.kcal + (e.kcal || 0), p: t.p + (e.p || 0), c: t.c + (e.c || 0), g: t.g + (e.g || 0), fb: t.fb + (e.fb || 0) }), { kcal: 0, p: 0, c: 0, g: 0, fb: 0 });
   }
   const uidF = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  function addFood(id, entries) {
-    const key = dayKey();
+  function addFood(id, entries, key = diaSel()) {
     S.update(id, (x) => {
       x.food = x.food || {};
       x.food[key] = (x.food[key] || []).concat(entries.map((e) => ({ id: uidF(), at: Date.now(), t: Date.now(), ...e })));
@@ -1055,8 +1160,8 @@
   }
 
   // Resumen del día: anillo con lo consumido frente a la meta
-  function foodDayCard(p, goal) {
-    const t = dayTotals(p);
+  function foodDayCard(p, goal, key = dayKey()) {
+    const t = dayTotals(p, key), esHoy = key === dayKey();
     const pct = Math.min(1, t.kcal / goal), over = t.kcal > goal;
     const R = 52, C = 2 * Math.PI * R;
     return `
@@ -1064,8 +1169,8 @@
         <div class="fd-ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="${R}" class="r-bg"/><circle cx="60" cy="60" r="${R}" class="r-fg" style="stroke-dasharray:${C};stroke-dashoffset:${C * (1 - pct)}"/></svg>
           <span><strong>${Math.round(t.kcal)}</strong><small>de ${goal} kcal</small></span></div>
         <div class="fd-info">
-          <h3>Hoy</h3>
-          <p class="${over ? 'bad' : ''}">${over ? `⚠️ Te pasaste por <strong>${Math.round(t.kcal - goal)} kcal</strong>` : `Te quedan <strong>${Math.round(goal - t.kcal)} kcal</strong>`}</p>
+          <h3>${esc(diaNombre(key))}</h3>
+          <p class="${over ? 'bad' : ''}">${over ? `⚠️ ${esHoy ? 'Te pasaste' : 'Te pasaste ese día'} por <strong>${Math.round(t.kcal - goal)} kcal</strong>` : esHoy ? `Te quedan <strong>${Math.round(goal - t.kcal)} kcal</strong>` : t.kcal ? `Quedaste <strong>${Math.round(goal - t.kcal)} kcal</strong> bajo la meta` : 'No hay nada anotado ese día'}</p>
           <span class="muted small">Proteína ${Math.round(t.p)} g · Carbos ${Math.round(t.c)} g · Grasa ${Math.round(t.g)} g · Fibra ${Math.round(t.fb)} g</span>
         </div>
       </div>`;
@@ -1073,7 +1178,7 @@
 
   // Colores revisados para daltonismo (proteína, carbohidratos, grasas)
   const MACRO_COLORS = { p: '#E2572B', c: '#2E9E6B', g: '#6B6FD6' };
-  function macroDonut(t, goals) {
+  function macroDonut(t, goals, titulo = '¿Qué comiste hoy?') {
     const parts = [
       { k: 'p', name: 'Proteína', gr: t.p, kcal: t.p * 4 },
       { k: 'c', name: 'Carbohidratos', gr: t.c, kcal: t.c * 4 },
@@ -1095,7 +1200,7 @@
     };
     return `
       <div class="card macros-card">
-        <h3>¿Qué comiste hoy?</h3>
+        <h3>${esc(titulo)}</h3>
         <div class="dn-row">
           <div class="dn"><svg viewBox="0 0 120 120" role="img" aria-label="Reparto de calorías por macronutriente">
             <circle cx="60" cy="60" r="${R}" class="dn-track"/>${segs}</svg>
@@ -1114,20 +1219,26 @@
   function nutriTab(p, m) {
     const a = p.answers;
     const n = P.nutrition(a, m);
-    const key = dayKey();
+    const key = diaSel(), hoy = dayKey(), esHoy = key === hoy;
     const entries = dayEntries(p, key);
-    const week = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return { d, kcal: dayTotals(p, dayKey(d)).kcal }; });
+    // 7 días que terminan hoy (o en el día elegido, si es más antiguo)
+    const fin = moverDia(key, 6) < hoy ? key : hoy;
+    const week = Array.from({ length: 7 }, (_, i) => { const k = moverDia(fin, i - 6); return { k, d: fromKey(k), kcal: dayTotals(p, k).kcal, n: dayEntries(p, k).length }; });
+    const inicioPlan = dayKey(new Date(p.createdAt));
+    const sinAnotar = week.filter((w) => !w.n && w.k !== hoy && w.k >= inicioPlan);
     const maxK = Math.max(n.kcal * 1.2, ...week.map((w) => w.kcal));
     const tTot = dayTotals(p, key);
     const pK = n.protein * 4, cK = n.carbs * 4, gK = n.fat * 9, allK = pK + cK + gK;
     const goals = { protein: n.protein, fiber: Math.round((n.kcal / 1000) * 14), pPct: Math.round((pK / allK) * 100), cPct: Math.round((cK / allK) * 100), gPct: Math.round((gK / allK) * 100) };
     const foodBlock = `
-      ${foodDayCard(p, n.kcal)}
-      ${macroDonut(tTot, goals)}
+      ${dayNavHTML(key)}
+      ${foodDayCard(p, n.kcal, key)}
+      ${macroDonut(tTot, goals, esHoy ? '¿Qué comiste hoy?' : '¿Qué comiste ese día?')}
       <div class="food-actions">
-        <label class="btn primary">📷 Foto del plato<input type="file" id="foodphoto" accept="image/*" capture="environment" hidden></label>
+        <label class="btn primary">📷 ${esHoy ? 'Foto del plato' : 'Foto de ese día'}<input type="file" id="foodphoto" accept="image/*" ${esHoy ? 'capture="environment"' : ''} hidden></label>
         <button class="btn ghost" id="foodmanual">✍️ Anotar a mano</button>
       </div>
+      ${esHoy ? '<label class="btn link small center-link">🖼️ O elige una foto de la galería<input type="file" id="foodgal" accept="image/*" hidden></label>' : ''}
       <p class="muted small center">Claude revisa la foto con tu suscripción, en tu PC, y la anota sola en tu día. Si el PC está apagado, la foto espera hasta que lo enciendas. Es un cálculo aproximado.</p>
       ${MEALS.map(([mk, ml]) => {
         const list = entries.filter((e) => e.meal === mk);
@@ -1137,10 +1248,11 @@
           <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>📷 ${e.err ? esc(e.err) : 'Foto en espera de Claude…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : Sync.pcEncendido() ? ' · se está revisando' : ' · se revisa al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
             : `<li><span ${e.foto ? `class="food-rev" data-rev="${e.foto}" role="button" tabindex="0"` : ''}>${esc(e.name)}<small class="muted"> · ${e.ml ? e.ml + ' ml' : e.gr ? e.gr + ' g' : ''}${e.src === 'foto' ? ' · 📷' : ''}</small></span><strong>${Math.round(e.kcal)} kcal</strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`).join('')}</ul></div>`;
       }).join('')}
-      ${entries.length ? '' : '<p class="muted center">Todavía no anotas nada hoy.</p>'}
-      <div class="card"><h3>Últimos 7 días</h3>
-        <div class="week-bars">${week.map((w) => `<div class="wb"><i style="height:${Math.round((w.kcal / maxK) * 100)}%" class="${w.kcal > n.kcal ? 'over' : ''}"></i><small>${w.d.toLocaleDateString('es', { weekday: 'short' }).slice(0, 2)}</small></div>`).join('')}
+      ${entries.length ? '' : `<p class="muted center">${esHoy ? 'Todavía no anotas nada hoy.' : 'No anotaste nada este día. Puedes completarlo ahora.'}</p>`}
+      <div class="card"><h3>${fin === hoy ? 'Últimos 7 días' : 'Esa semana'} <span class="muted small">toca un día para verlo</span></h3>
+        <div class="week-bars">${week.map((w) => `<button class="wb ${w.k === key ? 'sel' : ''} ${w.n ? '' : 'empty'}" data-dia="${w.k}" aria-label="${esc(diaNombre(w.k, true))}: ${Math.round(w.kcal)} kcal"><i style="height:${Math.round((w.kcal / maxK) * 100)}%" class="${w.kcal > n.kcal ? 'over' : ''}"></i><small>${w.d.toLocaleDateString('es', { weekday: 'short' }).slice(0, 2)}<br>${w.d.getDate()}</small></button>`).join('')}
           <div class="wb-goal" style="bottom:${Math.round((n.kcal / maxK) * 100)}%"><span>meta</span></div></div>
+        ${sinAnotar.length ? `<p class="small warn-txt">⚠️ Sin nada anotado: ${sinAnotar.map((w) => `<button class="btn link small" data-dia="${w.k}">${esc(diaNombre(w.k))}</button>`).join(' · ')}. Tócalo para completarlo.</p>` : ''}
       </div>`;
     const pk = n.protein * 4, fk = n.fat * 9, ck = n.carbs * 4, tot = pk + fk + ck;
     const macro = (label, g, k, cls) => `
@@ -1193,10 +1305,29 @@
         <h3>Peso</h3>
         ${chart}
         <div class="inline-form">
-          <input id="wkg" type="text" inputmode="decimal" placeholder="Peso de hoy (kg)">
+          <input id="wkg" type="text" inputmode="decimal" placeholder="Peso (kg)">
+          <input id="wdate" type="date" value="${diaSel()}" max="${dayKey()}" aria-label="Fecha del peso">
           <button class="btn primary small" id="addw">Guardar</button>
         </div>
-        <ul class="list compact">${ws.slice().reverse().slice(0, 8).map((w) => `<li><span>${fmtDate(w.date)}</span><strong>${w.kg} kg</strong></li>`).join('')}</ul>
+        <ul class="list compact">${ws.slice().sort((x, y) => y.date - x.date).slice(0, 8).map((w) => `<li><span>${fmtDate(w.date)}</span><strong>${w.kg} kg</strong></li>`).join('')}</ul>
+      </div>
+      ${historialHTML(p)}`;
+  }
+
+  // Últimos 14 días: qué se entrenó y cuánto se comió. Tocar un día lo abre para revisarlo o completarlo.
+  function historialHTML(p) {
+    const goal = P.nutrition(p.answers, P.metrics(p.answers)).kcal;
+    const inicio = dayKey(new Date(p.createdAt));
+    const dias = Array.from({ length: 14 }, (_, i) => moverDia(dayKey(), -i)).filter((k) => k >= inicio);
+    return `
+      <div class="card">
+        <h3>Tus últimos días <span class="muted small">toca uno para verlo</span></h3>
+        <ul class="list compact hist">${dias.map((k) => {
+          const e = entrenosDelDia(p, k), kc = Math.round(dayTotals(p, k).kcal);
+          return `<li><button class="hist-row" data-hist="${k}"><span class="hist-day">${esc(diaNombre(k))}</span>
+            <span class="hist-tr ${e.length ? 'ok' : 'muted'}">${e.length ? '🏋️ ' + esc(e.map((x) => x.name.split(' · ')[0]).join(', ')) : 'Sin entrenamiento'}</span>
+            <span class="hist-kc ${kc > goal ? 'bad' : kc ? '' : 'muted'}">${kc ? kc + ' kcal' : 'sin comidas'}</span></button></li>`;
+        }).join('')}</ul>
       </div>`;
   }
 
@@ -1310,11 +1441,15 @@
 
   function bindPlanTab(p, tab) {
     if (tab === 'nutri') {
-      $$('[data-del]').forEach((b) => b.onclick = () => { removeFood(p.id, dayKey(), b.dataset.del); renderPlan(p.id, 'nutri'); });
+      const k = diaSel();
+      bindDayNav(() => renderPlan(p.id, 'nutri'));
+      $$('[data-del]').forEach((b) => b.onclick = () => { removeFood(p.id, k, b.dataset.del); renderPlan(p.id, 'nutri'); });
       $('#foodmanual').onclick = () => openManualFood(p);
-      $('#foodphoto').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) analyzePhoto(p, f); };
-      $$('[data-rev]').forEach((el) => el.onclick = () => showFoodReview(p, el.dataset.rev, dayKey(), null));
-      dayEntries(p).filter((e) => e.pend).forEach((e) => fotosEnEspera.add(e.id));
+      const foto = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) analyzePhoto(p, f); };
+      $('#foodphoto').onchange = foto;
+      const gal = $('#foodgal'); if (gal) gal.onchange = foto;
+      $$('[data-rev]').forEach((el) => el.onclick = () => showFoodReview(p, el.dataset.rev, k, null));
+      dayEntries(p, k).filter((e) => e.pend).forEach((e) => fotosEnEspera.add(e.id));
     }
     if (tab === 'plan') {
       $$('.chip').forEach((b) => b.onclick = () => { ui.week[p.id] = +b.dataset.w; renderPlan(p.id, 'plan'); });
@@ -1328,13 +1463,17 @@
       const add = () => {
         const v = parseFloat($('#wkg').value.replace(',', '.'));
         if (isNaN(v) || v < 30 || v > 300) return alert('Introduce un peso válido en kg.');
+        const wd = /^\d{4}-\d{2}-\d{2}$/.test($('#wdate').value) && $('#wdate').value <= dayKey() ? $('#wdate').value : dayKey();
+        const date = horaDelDia(wd), kg = Math.round(v * 10) / 10;
         S.update(p.id, (x) => {
-          x.weights = (x.weights || []).concat({ date: Date.now(), kg: Math.round(v * 10) / 10 });
-          x.answers.weight = Math.round(v * 10) / 10; // la nutrición se recalcula con el peso actual
+          x.weights = (x.weights || []).concat({ date, kg });
+          // la nutrición se recalcula con el peso más reciente
+          if (x.weights.every((w) => w.date <= date)) x.answers.weight = kg;
         });
         renderPlan(p.id, 'progress');
       };
       $('#addw').onclick = add;
+      $$('[data-hist]').forEach((b) => b.onclick = () => { ui.dia = b.dataset.hist === dayKey() ? null : b.dataset.hist; go('#/'); });
       $('#wkg').onkeydown = (e) => { if (e.key === 'Enter') add(); };
     } else if (tab === 'profile') {
       $('#redo').onclick = () => startQuiz({ ...p.answers }, p.id);
@@ -1544,7 +1683,7 @@
     if (iv) iv.onclick = () => runTimer(finisherPhases(day.finisher));
     $('#note').onchange = (ev) => saveLog((l) => { l.note = ev.target.value; });
     $('#done').onclick = () => {
-      saveLog((l) => { l.done = !l.done; l.date = Date.now(); l.note = $('#note').value; });
+      saveLog((l) => { l.done = !l.done; l.date = Date.now(); l.t = Date.now(); l.note = $('#note').value; });
       if (S.get(id).log[key].done) go('#/plan/' + id);
       else renderSession(id, w, d);
     };
@@ -1780,7 +1919,7 @@
         }, 1000);
       };
     } else if (st.type === 'done') {
-      S.update(guide.id, (x) => { const l = x.log[guide.logKey] || (x.log[guide.logKey] = { sets: {} }); l.done = true; l.date = Date.now(); l.min = day.minutes; if (guide.routine) l.routine = day.name; });
+      S.update(guide.id, (x) => { const l = x.log[guide.logKey] || (x.log[guide.logKey] = { sets: {} }); l.done = true; l.date = Date.now(); l.t = Date.now(); l.min = day.minutes; if (guide.routine) l.routine = day.name; });
       $('#gfinish').onclick = () => { const id = guide.id, r = guide.routine, back = guide.back; guide = null; go(r || !id ? back || '#/rutinas' : '#/plan/' + id); };
       confetti();
     }

@@ -15,8 +15,9 @@
         const prev = sets[i] || [];
         sets[i] = Array.from({ length: Math.max(prev.length, (arr || []).length) }, (_, s) => !!(prev[s] || arr?.[s]));
       }
-      const last = (l.date || 0) >= (o.date || 0) ? l : o;
-      log[k] = { ...o, ...l, sets, done: !!last.done, date: last.date, note: l.note || o.note };
+      // El cambio más reciente: hora real del cambio (t) o, en registros antiguos, la fecha.
+      const last = (l.t || l.date || 0) >= (o.t || o.date || 0) ? l : o;
+      log[k] = { ...o, ...l, sets, done: !!last.done, date: last.date, t: last.t, min: last.min ?? o.min, note: l.note || o.note };
     }
     const seen = new Set();
     const weights = [...(older.weights || []), ...(newer.weights || [])]
