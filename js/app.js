@@ -329,16 +329,16 @@
 
   // ---------- Foto del plato ----------
   // Achica la foto (máx. 1024 px) para enviarla rápido al PC
-  function shrinkPhoto(file) {
+  function shrinkPhoto(file, max = 1024, calidad = 0.82) {
     return new Promise((res, rej) => {
       const img = new Image();
       img.onload = () => {
-        const k = Math.min(1, 1024 / Math.max(img.width, img.height));
+        const k = Math.min(1, max / Math.max(img.width, img.height));
         const c = document.createElement('canvas');
         c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
         URL.revokeObjectURL(img.src);
-        res(c.toDataURL('image/jpeg', 0.82));
+        res(c.toDataURL('image/jpeg', calidad));
       };
       img.onerror = () => rej(new Error('No se pudo leer la foto'));
       img.src = URL.createObjectURL(file);
@@ -477,6 +477,10 @@
   // Aviso cuando Claude termina una foto mientras usas la app
   const fotosEnEspera = new Set();
   function avisosFotos() {
+    for (const k of [...etiquetasEnEspera]) {
+      const f = S.foods()[k];
+      if (f && f.src === 'etiqueta') { etiquetasEnEspera.delete(k); toast(`🏷️ Etiqueta guardada: ${f.n} · ${f.kcal} kcal por 100 ${f.ml ? 'ml' : 'g'}`); }
+    }
     for (const id of [...fotosEnEspera]) {
       if (!modal.classList.contains('hidden') && modal.querySelector(`[data-foto="${id}"]`)) continue; // ya la está mirando
       for (const p of S.profiles()) {
@@ -500,6 +504,15 @@
   // Busca en: alimentos comunes (js/foods.js + foods-mas.js), tus alimentos (agregados por ti o por Claude) y
   // ~2.300 productos de supermercados de Chile (Open Food Facts, js/alimentos-chile.json, se carga al abrir).
   // Si no está: Claude lo calcula (en tu PC) o lo escribes tú con la etiqueta, y queda guardado para la próxima vez.
+  const EXTRAS = [['sat', 'Grasas saturadas', 'g'], ['mono', 'Grasas monoinsaturadas', 'g'], ['poli', 'Grasas poliinsaturadas', 'g'], ['trans', 'Grasas trans', 'g'], ['col', 'Colesterol', 'mg'], ['azu', 'Azúcares totales', 'g'], ['sod', 'Sodio', 'mg']];
+  const extrasDe = (f, k = 1) => {
+    const o = {};
+    for (const [x] of EXTRAS) if (f[x] !== undefined && f[x] !== null && f[x] !== '') o[x] = Math.round(f[x] * k * 10) / 10;
+    // Otros datos de la etiqueta (vitaminas, minerales…): los que Claude encuentre, con su unidad
+    if (f.otros) o.otros = Object.fromEntries(Object.entries(f.otros).map(([n, [v, u]]) => [n, [Math.round(v * k * 100) / 100, u]]));
+    return o;
+  };
+  const etiquetasEnEspera = new Set();
   let PRODUCTOS = null;
   function cargarProductos() {
     if (PRODUCTOS) return Promise.resolve(PRODUCTOS);
@@ -544,13 +557,23 @@
           <p id="mfnonetxt"></p>
           <div class="stack">
             <button class="btn primary" id="mfai">🤖 Que Claude lo calcule</button>
-            <button class="btn ghost" id="mfown">🏷️ Escribirlo yo (con la etiqueta)</button>
+            <button class="btn ghost" id="mflabel">📸 Foto de la etiqueta nutricional</button>
+            <button class="btn ghost" id="mfown">✍️ Escribir los datos yo</button>
           </div>
         </div>
         <div id="mfform" hidden>
           <p class="mf-name"><strong id="mfname"></strong> <span class="muted small" id="mfhint"></span></p>
           <div class="inline-form"><input id="mfqty" type="number" inputmode="decimal" min="0"><span id="mfunit" class="mf-unit"></span></div>
           <p class="food-total"><strong id="mfkcal">0</strong> kcal</p>
+          <div id="mfextra" class="mf-extra"></div>
+        </div>
+        <div id="mflabelform" hidden>
+          <p class="muted small">Saca una foto a la tabla <strong>"Información nutricional"</strong> del envase. Claude lee todos los datos (calorías, proteínas, grasas saturadas, mono y poliinsaturadas, trans, colesterol, carbohidratos, azúcares, fibra, sodio, porción y sellos) y guarda el producto en tus alimentos.</p>
+          <label class="mf-lbl">Nombre del producto<input id="lname" type="text" placeholder="Ej: Galletas de arroz Líder"></label>
+          <label class="btn ghost wide">📸 Sacar o elegir la foto<input type="file" id="lfoto" accept="image/*" hidden></label>
+          <img id="lprev" class="food-photo" alt="Foto de la etiqueta" hidden>
+          <label class="mf-lbl">¿Cuánto comiste? (opcional)<input id="lcant" type="text" placeholder="Ej: 3 galletas, 1 paquete, 30 g · vacío = solo guardar"></label>
+          <p class="small" id="lpc"></p>
         </div>
         <div id="mfaiform" hidden>
           <p class="muted small">Claude busca los valores de ese producto (también de marcas chilenas) y lo anota solo en tu día. Lo nuevo queda guardado en tus alimentos.</p>
@@ -568,6 +591,9 @@
             <label class="mf-lbl"><span>Grasas /100 <span class="ou">g</span></span><input id="og" type="number" inputmode="decimal" min="0" placeholder="opcional"></label>
             <label class="mf-lbl"><span>Fibra /100 <span class="ou">g</span></span><input id="ofb" type="number" inputmode="decimal" min="0" placeholder="opcional"></label>
           </div>
+          <details class="mf-custom"><summary>Más datos de la etiqueta (opcional)</summary>
+            <div class="mf-grid">${EXTRAS.map(([k, l, u]) => `<label class="mf-lbl"><span>${l} /100 <span class="ou">g</span>${u === 'mg' ? ' (mg)' : ''}</span><input id="ox-${k}" type="number" inputmode="decimal" min="0"></label>`).join('')}</div>
+          </details>
           <label class="mf-lbl">¿Solo sabes las calorías totales?<input id="ototal" type="number" inputmode="decimal" min="0" placeholder="Calorías de lo que comiste (opcional)"></label>
           <label class="chk"><input type="checkbox" id="okeep" checked> Guardar en mis alimentos para la próxima vez</label>
           <p class="food-total"><strong id="okc">0</strong> kcal</p>
@@ -580,13 +606,14 @@
     const $m = (s) => modal.querySelector(s);
     const q = $m('#mfq'), res = $m('#mfres'), save = $m('#mfsave');
     const num = (s) => { const v = parseFloat(String($m(s).value).replace(',', '.')); return v >= 0 ? v : NaN; };
-    let sel = null, modo = 'buscar';
+    let sel = null, modo = 'buscar', fotoEtiqueta = null;
     const mostrar = (m) => {
       modo = m;
       $m('#mfform').hidden = m !== 'sel';
       $m('#mfaiform').hidden = m !== 'ai';
       $m('#mfownform').hidden = m !== 'own';
-      save.textContent = m === 'ai' ? '🤖 Enviar a Claude' : 'Guardar en mi día';
+      $m('#mflabelform').hidden = m !== 'label';
+      save.textContent = m === 'ai' ? '🤖 Enviar a Claude' : m === 'label' ? '🏷️ Enviar la etiqueta a Claude' : 'Guardar en mi día';
       calc();
     };
     // Lo escrito por la persona: total o por 100 g × cantidad
@@ -607,6 +634,10 @@
         $m('#aipc').innerHTML = !Sync.conectado() ? '⚠️ Para usar a Claude, conecta este aparato a tu nube (Perfil → Nube).'
           : Sync.pcEncendido() ? '🟢 Tu PC está encendido: queda anotado en menos de un minuto.' : '⚪ Tu PC está apagado: queda en espera y se anota solo al encenderlo.';
         if (!Sync.conectado()) save.disabled = true;
+      } else if (modo === 'label') {
+        $m('#lpc').innerHTML = !Sync.conectado() ? '⚠️ Para usar a Claude, conecta este aparato a tu nube (Perfil → Nube).'
+          : Sync.pcEncendido() ? '🟢 Tu PC está encendido: queda guardado en menos de un minuto.' : '⚪ Tu PC está apagado: la foto queda en espera y se lee al encenderlo.';
+        save.disabled = !(Sync.conectado() && $m('#lname').value.trim() && fotoEtiqueta);
       } else if (modo === 'own') {
         const o = propio();
         $m('#okc').textContent = o.kcal >= 0 ? o.kcal : 0;
@@ -617,24 +648,36 @@
     const list = () => {
       const texto = q.value.trim();
       const found = buscarAlimentos(texto);
-      res.innerHTML = found.map((f, i) => `<li><button data-f="${i}"><span>${esc(f.n)}${f.marca ? ` <span class="muted small">· ${esc(f.marca)}</span>` : ''}${f.src === 'claude' ? ' ✨' : f.src === 'mio' ? ' 📝' : ''}</span> <span class="muted small">${f.kcal} kcal / 100 ${f.ml ? 'ml' : 'g'}</span></button></li>`).join('');
+      res.innerHTML = found.map((f, i) => `<li><button data-f="${i}"><span>${esc(f.n)}${f.marca ? ` <span class="muted small">· ${esc(f.marca)}</span>` : ''}${f.src === 'claude' ? ' ✨' : f.src === 'mio' ? ' 📝' : f.src === 'etiqueta' ? ' 🏷️' : ''}</span> <span class="muted small">${f.kcal} kcal / 100 ${f.ml ? 'ml' : 'g'}</span></button></li>`).join('');
       res.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => {
         sel = found[+b.dataset.f];
         $m('#mfname').textContent = sel.n + (sel.marca ? ' · ' + sel.marca : '');
         $m('#mfhint').textContent = sel.u || (sel.src === 'off' ? 'tabla nutricional del envase' : '');
         $m('#mfunit').textContent = sel.ml ? 'ml' : 'g';
         $m('#mfqty').value = sel.porcion || 100;
+        const ex = EXTRAS.filter(([x]) => sel[x] !== undefined);
+        $m('#mfextra').innerHTML = (sel.sellos || []).map((t) => `<span class="sello">${esc(t)}</span>`).join('')
+          + (ex.length || sel.otros ? `<p class="muted small">Por 100 ${sel.ml ? 'ml' : 'g'}: ${[...ex.map(([x, l, u]) => `${l.toLowerCase()} ${sel[x]} ${u}`), ...Object.entries(sel.otros || {}).map(([n, [v, u]]) => `${esc(n.toLowerCase())} ${v} ${esc(u)}`)].join(' · ')}</p>` : '');
         res.innerHTML = '';
         $m('#mfnone').hidden = true;
         q.value = sel.n;
         mostrar('sel');
       });
       const largo = texto.length >= 3;
-      $m('#mfnone').hidden = !largo || modo === 'ai' || modo === 'own';
+      $m('#mfnone').hidden = !largo || modo === 'ai' || modo === 'own' || modo === 'label';
       $m('#mfnonetxt').innerHTML = found.length ? '¿No es ninguno de estos?' : `No encontré <strong>${esc(texto)}</strong> en la base.`;
     };
     q.oninput = () => { sel = null; if (modo === 'sel') mostrar('buscar'); list(); };
     $m('#mfai').onclick = () => { $m('#aiq').value = q.value.trim(); $m('#mfnone').hidden = true; res.innerHTML = ''; mostrar('ai'); $m('#aicant').focus(); };
+    $m('#mflabel').onclick = () => { $m('#lname').value = q.value.trim(); $m('#mfnone').hidden = true; res.innerHTML = ''; mostrar('label'); };
+    $m('#lfoto').onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = '';
+      if (!f) return;
+      try { fotoEtiqueta = await shrinkPhoto(f, 1600, 0.86); } catch (er) { return toast(er.message, 'warn'); }
+      $m('#lprev').src = fotoEtiqueta; $m('#lprev').hidden = false;
+      calc();
+    };
+    $m('#lname').oninput = calc;
     $m('#mfown').onclick = () => { $m('#oname').value = q.value.trim(); $m('#mfnone').hidden = true; res.innerHTML = ''; mostrar('own'); $m('#okcal').focus(); };
     modal.querySelectorAll('#mfqty, #aiq, #aicant, #mfownform input').forEach((x) => { x.oninput = calc; });
     $m('#ounit').onchange = calc;
@@ -643,19 +686,28 @@
       const mk = $m('#mfmeal').value;
       if (modo === 'sel' && sel) {
         const v = Math.max(0, num('#mfqty') || 0), k = v / 100;
-        addFood(p.id, [{ name: sel.n + (sel.marca ? ' · ' + sel.marca : ''), gr: sel.ml ? null : v, ml: sel.ml ? v : null, kcal: Math.round(sel.kcal * k), p: Math.round(sel.p * k), c: Math.round(sel.c * k), g: Math.round(sel.g * k), fb: Math.round((sel.fb || 0) * k * 10) / 10, meal: mk, src: 'manual' }], dia);
+        addFood(p.id, [{ name: sel.n + (sel.marca ? ' · ' + sel.marca : ''), gr: sel.ml ? null : v, ml: sel.ml ? v : null, kcal: Math.round(sel.kcal * k), p: Math.round(sel.p * k), c: Math.round(sel.c * k), g: Math.round(sel.g * k), fb: Math.round((sel.fb || 0) * k * 10) / 10, ...extrasDe(sel, k), meal: mk, src: 'manual' }], dia);
       } else if (modo === 'ai') {
         const id = 'c' + uidF(), consulta = $m('#aiq').value.trim(), cant = $m('#aicant').value.trim();
         addFood(p.id, [{ id, pend: true, consulta, cant, name: consulta, kcal: 0, meal: mk, src: 'claude' }], dia);
         fotosEnEspera.add(id);
         Sync.sync();
         toast(Sync.pcEncendido() ? '🤖 Claude lo está calculando…' : '🤖 Quedó en espera: Claude lo calcula al encender el PC');
+      } else if (modo === 'label') {
+        const id = 'e' + uidF(), nombre = $m('#lname').value.trim(), cant = $m('#lcant').value.trim();
+        Sync.encolarFoto({ id, b64: fotoEtiqueta.split(',')[1], tipo: 'image/jpeg', meta: { tipo: 'etiqueta', nombre, cant, perfil: p.id, dia, meal: mk, at: Date.now() } });
+        if (cant) { addFood(p.id, [{ id, pend: true, etiqueta: true, consulta: nombre, cant, name: nombre, kcal: 0, meal: mk, src: 'etiqueta' }], dia); fotosEnEspera.add(id); }
+        etiquetasEnEspera.add(NutriMerge.normNombre(nombre));
+        Sync.sync();
+        toast(Sync.pcEncendido() ? '🏷️ Claude está leyendo la etiqueta…' : '🏷️ Quedó en espera: Claude la lee al encender el PC');
       } else if (modo === 'own') {
         const o = propio(), ml = $m('#ounit').value === 'ml', name = $m('#oname').value.trim();
-        addFood(p.id, [{ name, gr: !ml && o.qty > 0 ? o.qty : null, ml: ml && o.qty > 0 ? o.qty : null, kcal: o.kcal, p: Math.round(o.p), c: Math.round(o.c), g: Math.round(o.g), fb: o.fb, meal: mk, src: 'manual' }], dia);
+        const ex100 = {};
+        for (const [x] of EXTRAS) { const v = num('#ox-' + x); if (v >= 0 && $m('#ox-' + x).value !== '') ex100[x] = v; }
+        addFood(p.id, [{ name, gr: !ml && o.qty > 0 ? o.qty : null, ml: ml && o.qty > 0 ? o.qty : null, kcal: o.kcal, p: Math.round(o.p), c: Math.round(o.c), g: Math.round(o.g), fb: o.fb, ...(o.f > 0 ? extrasDe(ex100, o.f) : {}), meal: mk, src: 'manual' }], dia);
         if ($m('#okeep').checked && o.k100 >= 0 && $m('#okcal').value !== '') {
           const v = (s) => (num(s) >= 0 ? num(s) : 0);
-          S.setFood(NutriMerge.normNombre(name), { n: name, kcal: Math.round(o.k100), p: v('#op'), c: v('#oc'), g: v('#og'), fb: v('#ofb'), ml, porcion: o.qty > 0 ? Math.round(o.qty) : 100, u: 'agregado por ti', src: 'mio', t: Date.now() });
+          S.setFood(NutriMerge.normNombre(name), { n: name, kcal: Math.round(o.k100), p: v('#op'), c: v('#oc'), g: v('#og'), fb: v('#ofb'), ml, porcion: o.qty > 0 ? Math.round(o.qty) : 100, u: 'agregado por ti', src: 'mio', ...ex100, t: Date.now() });
         }
       }
       closeModal();
@@ -1244,7 +1296,7 @@
   }
   function dayEntries(p, key = dayKey()) { return ((p.food || {})[key] || []).filter((e) => !e.deleted); }
   function dayTotals(p, key) {
-    return dayEntries(p, key).reduce((t, e) => ({ kcal: t.kcal + (e.kcal || 0), p: t.p + (e.p || 0), c: t.c + (e.c || 0), g: t.g + (e.g || 0), fb: t.fb + (e.fb || 0) }), { kcal: 0, p: 0, c: 0, g: 0, fb: 0 });
+    return dayEntries(p, key).reduce((t, e) => ({ kcal: t.kcal + (e.kcal || 0), p: t.p + (e.p || 0), c: t.c + (e.c || 0), g: t.g + (e.g || 0), fb: t.fb + (e.fb || 0), azu: t.azu + (e.azu || 0), sod: t.sod + (e.sod || 0), sat: t.sat + (e.sat || 0) }), { kcal: 0, p: 0, c: 0, g: 0, fb: 0, azu: 0, sod: 0, sat: 0 });
   }
   const uidF = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   function addFood(id, entries, key = diaSel()) {
@@ -1270,6 +1322,7 @@
           <h3>${esc(diaNombre(key))}</h3>
           <p class="${over ? 'bad' : ''}">${over ? `⚠️ ${esHoy ? 'Te pasaste' : 'Te pasaste ese día'} por <strong>${Math.round(t.kcal - goal)} kcal</strong>` : esHoy ? `Te quedan <strong>${Math.round(goal - t.kcal)} kcal</strong>` : t.kcal ? `Quedaste <strong>${Math.round(goal - t.kcal)} kcal</strong> bajo la meta` : 'No hay nada anotado ese día'}</p>
           <span class="muted small">Proteína ${Math.round(t.p)} g · Carbos ${Math.round(t.c)} g · Grasa ${Math.round(t.g)} g · Fibra ${Math.round(t.fb)} g</span>
+          ${t.azu || t.sod || t.sat ? `<span class="muted small">De lo anotado con etiqueta: azúcares ${Math.round(t.azu)} g · grasas sat. ${Math.round(t.sat)} g · sodio ${Math.round(t.sod)} mg</span>` : ''}
         </div>
       </div>`;
   }
@@ -1343,7 +1396,7 @@
         if (!list.length) return '';
         const kc = list.reduce((t, e) => t + e.kcal, 0);
         return `<div class="card meal"><h3>${ml} <span class="muted small">${Math.round(kc)} kcal</span></h3>
-          <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>${e.consulta ? '🤖' : '📷'} ${e.err ? esc(e.err) : e.consulta ? `Claude calcula: ${esc(e.consulta)}${e.cant ? ' · ' + esc(e.cant) : ''}` : 'Foto en espera de Claude…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : Sync.pcEncendido() ? ' · se está revisando' : ' · se revisa al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
+          <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>${e.etiqueta ? '🏷️' : e.consulta ? '🤖' : '📷'} ${e.err ? esc(e.err) : e.consulta ? `${e.etiqueta ? 'Claude lee la etiqueta' : 'Claude calcula'}: ${esc(e.consulta)}${e.cant ? ' · ' + esc(e.cant) : ''}` : 'Foto en espera de Claude…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : Sync.pcEncendido() ? ' · se está revisando' : ' · se revisa al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
             : `<li><span ${e.foto ? `class="food-rev" data-rev="${e.foto}" role="button" tabindex="0"` : ''}>${esc(e.name)}<small class="muted"> · ${e.ml ? e.ml + ' ml' : e.gr ? e.gr + ' g' : ''}${e.src === 'foto' ? ' · 📷' : ''}</small></span><strong>${Math.round(e.kcal)} kcal</strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`).join('')}</ul></div>`;
       }).join('')}
       ${entries.length ? '' : `<p class="muted center">${esHoy ? 'Todavía no anotas nada hoy.' : 'No anotaste nada este día. Puedes completarlo ahora.'}</p>`}
