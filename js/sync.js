@@ -40,7 +40,7 @@
       if (!r.ok) throw new Error('La nube respondió con error ' + r.status);
       const j = await r.json();
       if (j.error === 'clave') { const e = new Error('El código de conexión no es correcto'); e.clave = true; throw e; }
-      if (j.ok === false && !j.conflicto) { const e = new Error(j.error === 'limite' ? 'Se alcanzó el límite gratis de la IA por ahora' : 'La nube no pudo hacerlo (' + (j.mensaje || j.error) + ')'); e.codigo = j.error; throw e; }
+      if (j.ok === false && !j.conflicto) { const e = new Error(j.error === 'limite' ? 'Se alcanzó el límite gratis de la IA por ahora' : j.error === 'saturado' ? 'Gemini está con mucha demanda' : 'La nube no pudo hacerlo (' + (j.mensaje || j.error) + ')'); e.codigo = j.error; throw e; }
       return j;
     } catch (e) {
       if (e.name === 'AbortError') { const x = new Error('La nube no respondió a tiempo'); x.codigo = 'red'; throw x; }

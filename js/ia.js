@@ -134,8 +134,16 @@
     } catch (e) {
       if (e.codigo === 'red' || e.clave) return; // sin internet: se reintenta después
       job.fallos = (job.fallos || 0) + 1;
+      // Gemini saturado (algo pasajero): se reintenta cada minuto; si sigue así unos 8 minutos, pasa a Claude en el PC
+      if ((e.codigo === 'saturado' || e.codigo === 'ia') && job.fallos < 8) {
+        job.motivo = 'Gemini está con mucha demanda; se reintenta solo en un minuto';
+        actualizar(job);
+        setTimeout(procesar, 60000);
+        window.dispatchEvent(new CustomEvent('ia-espera', { detail: { id: job.id } }));
+        return;
+      }
       // Sin clave de Gemini, límite gratis alcanzado o errores repetidos → Claude en el PC
-      if (e.codigo === 'sin_ia' || e.codigo === 'limite' || job.fallos >= 2) {
+      if (e.codigo === 'sin_ia' || e.codigo === 'limite' || job.fallos >= 8) {
         alPC(job);
         quitar(job.id);
         window.dispatchEvent(new CustomEvent('ia-lista', { detail: { id: job.id, tipo: job.tipo, alPC: true, motivo: e.message } }));
@@ -167,6 +175,7 @@
 
   window.IA = {
     pedir, procesar, enCola: (id) => cola().some((j) => j.id === id), trabajando: (id) => trabajando.has(id),
+    motivo: (id) => (cola().find((j) => j.id === id) || {}).motivo || '',
   };
   // Se reintenta al volver internet, al volver a la app y cada vez que se sincroniza
   window.addEventListener('online', () => procesar());

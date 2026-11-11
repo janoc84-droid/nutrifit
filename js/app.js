@@ -405,6 +405,7 @@
       const st = Sync.state;
       txt.innerHTML = IA.enCola(id)
         ? (IA.trabajando(id) ? '<strong>La IA está mirando tu plato…</strong><br><span class="muted small">Unos segundos.</span>'
+          : IA.motivo(id) ? `<strong>Un momento…</strong><br><span class="muted small">${esc(IA.motivo(id))}.</span>`
           : '<strong>Sin internet en este momento.</strong><br><span class="muted small">La foto quedó guardada aquí y se revisa sola cuando vuelva la conexión.</span>')
         : Sync.fotosSinSubir()
         ? (st.status === 'offline' ? '<strong>Sin internet en este momento.</strong><br><span class="muted small">La foto quedó guardada aquí y se envía sola cuando vuelva la conexión.</span>' : '<strong>Enviando la foto…</strong>')
@@ -1529,7 +1530,7 @@
         if (!list.length) return '';
         const kc = list.reduce((t, e) => t + e.kcal, 0);
         return `<div class="card meal"><h3>${ml} <span class="muted small">${Math.round(kc)} kcal</span></h3>
-          <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>${e.etiqueta ? '🏷️' : e.consulta ? '🤖' : '📷'} ${e.err ? esc(e.err) : e.consulta ? `${e.etiqueta ? 'La IA lee la etiqueta' : 'La IA calcula'}: ${esc(e.consulta)}${e.cant ? ' · ' + esc(e.cant) : ''}` : 'Foto en espera de la IA…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : IA.enCola(e.id) ? (navigator.onLine ? ' · unos segundos' : ' · sin internet: se revisa al volver la conexión') : Sync.pcEncendido() ? ' · la revisa Claude en tu PC' : ' · la revisa Claude al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
+          <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>${e.etiqueta ? '🏷️' : e.consulta ? '🤖' : '📷'} ${e.err ? esc(e.err) : e.consulta ? `${e.etiqueta ? 'La IA lee la etiqueta' : 'La IA calcula'}: ${esc(e.consulta)}${e.cant ? ' · ' + esc(e.cant) : ''}` : 'Foto en espera de la IA…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : IA.enCola(e.id) ? (IA.motivo(e.id) ? ' · ' + esc(IA.motivo(e.id)) : navigator.onLine ? ' · unos segundos' : ' · sin internet: se revisa al volver la conexión') : Sync.pcEncendido() ? ' · la revisa Claude en tu PC' : ' · la revisa Claude al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
             : `<li><span ${e.foto ? `class="food-rev" data-rev="${e.foto}" role="button" tabindex="0"` : ''}>${esc(e.name)}<small class="muted"> · ${e.ml ? e.ml + ' ml' : e.gr ? e.gr + ' g' : ''}${e.src === 'foto' ? ' · 📷' : ''}</small></span><strong>${Math.round(e.kcal)} kcal</strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`).join('')}</ul></div>`;
       }).join('')}
       ${entries.length ? '' : `<p class="muted center">${esHoy ? 'Todavía no anotas nada hoy.' : 'No anotaste nada este día. Puedes completarlo ahora.'}</p>`}
