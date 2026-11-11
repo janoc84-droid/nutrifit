@@ -348,9 +348,66 @@
   // La foto la revisa la IA de la nube (Gemini, en tu Google Drive), aunque el PC esté apagado. Si no puede, la revisa
   // Claude en el PC cuando esté encendido. Lo encontrado se anota solo en el día.
   // Si el PC está apagado, la foto espera y se anota sola cuando se enciende.
-  async function analyzePhoto(p, file) {
+  // Fecha en que se sacó la foto: la de la cámara (EXIF) o, si no viene, la del archivo cuando es antigua.
+  async function fechaFoto(file) {
+    try {
+      const v = new DataView(await file.slice(0, 256 * 1024).arrayBuffer());
+      if (v.getUint16(0) === 0xFFD8) {
+        for (let o = 2; o < v.byteLength - 10;) {
+          const marca = v.getUint16(o), largo = v.getUint16(o + 2);
+          if (marca === 0xFFE1 && v.getUint32(o + 4) === 0x45786966) {
+            const t = o + 10, le = v.getUint16(t) === 0x4949;
+            const u16 = (x) => v.getUint16(t + x, le), u32 = (x) => v.getUint32(t + x, le);
+            const ifd = (x) => { const r = {}; for (let i = 0, n = u16(x); i < n; i++) r[u16(x + 2 + i * 12)] = x + 2 + i * 12; return r; };
+            const txt = (e) => { const n = u32(e + 4), off = n > 4 ? u32(e + 8) : e + 8; let s = ''; for (let i = 0; i < n - 1; i++) s += String.fromCharCode(v.getUint8(t + off + i)); return s; };
+            const i0 = ifd(u32(4));
+            let f = null;
+            if (i0[0x8769]) { const sub = ifd(u32(i0[0x8769] + 8)); if (sub[0x9003]) f = txt(sub[0x9003]); }
+            if (!f && i0[0x0132]) f = txt(i0[0x0132]);
+            const m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2})/.exec(f || '');
+            if (m) return new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+            break;
+          }
+          if ((marca & 0xFF00) !== 0xFF00) break;
+          o += 2 + largo;
+        }
+      }
+    } catch (e) { /* sin datos de la cámara */ }
+    return file.lastModified && Date.now() - file.lastModified > 3 * 60000 ? file.lastModified : null;
+  }
+
+  // Foto elegida de la fototeca: si es de otro día, se pregunta dónde anotarla; la comida sale de la hora de la foto.
+  async function fotoDeFototeca(p, file) {
     let dataUrl;
     try { dataUrl = await shrinkPhoto(file); } catch (e) { return alert(e.message); }
+    const f = await fechaFoto(file), sel = diaSel(), hoy = dayKey();
+    const dk = f ? dayKey(new Date(f)) : null;
+    if (!f || dk > hoy) return analyzePhoto(p, file, { dataUrl });
+    const h = new Date(f).getHours(), meal = mealByHour(h);
+    if (dk === sel) return analyzePhoto(p, file, { dataUrl, dia: dk, meal, at: f });
+    const mealTxt = (MEALS.find(([k]) => k === meal) || [])[1] || '';
+    const cuando = (k) => { const n = diaNombre(k, true).toLowerCase(); return n.startsWith('ayer') ? n : 'el ' + n; };
+    const hhmm = new Date(f).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    modal.innerHTML = `
+      <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="¿De cuándo es la foto?">
+        <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
+        <h2>🖼️ ¿De cuándo es esta foto?</h2>
+        <img class="food-photo" src="${dataUrl}" alt="Foto del plato">
+        <p>La sacaste <strong>${esc(cuando(dk))}</strong> a las <strong>${hhmm}</strong>.</p>
+        <div class="stack">
+          <button class="btn primary" id="fdia">📅 Anotarla ese día · ${esc(mealTxt)}</button>
+          <button class="btn ghost" id="fsel">Anotarla ${sel === hoy ? 'hoy' : esc(cuando(sel))}</button>
+        </div>
+      </div>`;
+    modal.classList.remove('hidden');
+    modal.querySelector('.m-close').onclick = closeModal;
+    modal.querySelector('#fdia').onclick = () => { ui.dia = dk === hoy ? null : dk; analyzePhoto(p, file, { dataUrl, dia: dk, meal, at: f }); };
+    modal.querySelector('#fsel').onclick = () => analyzePhoto(p, file, { dataUrl });
+  }
+
+  async function analyzePhoto(p, file, opts = {}) {
+    let dataUrl = opts.dataUrl;
+    if (!dataUrl) { try { dataUrl = await shrinkPhoto(file); } catch (e) { return alert(e.message); } }
     if (!Sync.conectado()) {
       modal.innerHTML = `
         <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="Foto del plato">
@@ -366,7 +423,7 @@
       modal.querySelector('#fmanual').onclick = () => openManualFood(p);
       return;
     }
-    const id = 'f' + uidF(), meal = mealByHour(), at = Date.now(), dia = diaSel();
+    const id = 'f' + uidF(), meal = opts.meal || mealByHour(), at = opts.at || Date.now(), dia = opts.dia || diaSel();
     addFood(p.id, [{ id, pend: true, name: 'Foto del plato', kcal: 0, meal, src: 'foto', at }], dia);
     fotosEnEspera.add(id);
     IA.pedir({ id, tipo: 'plato', b64: dataUrl.split(',')[1], meta: { perfil: p.id, dia, meal, at } });
@@ -1519,11 +1576,11 @@
       ${foodDayCard(p, n.kcal, key)}
       ${macroDonut(tTot, goals, esHoy ? '¿Qué comiste hoy?' : '¿Qué comiste ese día?')}
       <div class="food-actions">
-        <label class="btn primary">📷 ${esHoy ? 'Foto del plato' : 'Foto de ese día'}<input type="file" id="foodphoto" accept="image/*" ${esHoy ? 'capture="environment"' : ''} hidden></label>
-        <button class="btn ghost" id="foodmanual">✍️ Anotar a mano</button>
+        <label class="btn primary">📷 Sacar foto<input type="file" id="foodphoto" accept="image/*" capture="environment" hidden></label>
+        <label class="btn primary soft">🖼️ Fototeca<input type="file" id="foodgal" accept="image/*" hidden></label>
+        <button class="btn ghost span2" id="foodmanual">✍️ Anotar a mano</button>
       </div>
       ${liquidosCard(p, key, n.water)}
-      ${esHoy ? '<label class="btn link small center-link">🖼️ O elige una foto de la galería<input type="file" id="foodgal" accept="image/*" hidden></label>' : ''}
       <p class="muted small center">La IA (Gemini, gratis, desde tu Google Drive) revisa la foto y la anota sola en tu día, aunque el PC esté apagado. Es un cálculo aproximado.</p>
       ${MEALS.map(([mk, ml]) => {
         const list = entries.filter((e) => (MEAL_KEYS.has(e.meal) ? e.meal : 'snack') === mk);
@@ -1753,9 +1810,8 @@
         renderPlan(p.id, 'nutri');
       });
       $('#liqotro').onclick = () => openManualFood(p, { meal: 'liquidos', q: '' });
-      const foto = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) analyzePhoto(p, f); };
-      $('#foodphoto').onchange = foto;
-      const gal = $('#foodgal'); if (gal) gal.onchange = foto;
+      $('#foodphoto').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) analyzePhoto(p, f); };
+      $('#foodgal').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) fotoDeFototeca(p, f); };
       $$('[data-rev]').forEach((el) => el.onclick = () => showFoodReview(p, el.dataset.rev, k, null));
       dayEntries(p, k).filter((e) => e.pend).forEach((e) => fotosEnEspera.add(e.id));
     }

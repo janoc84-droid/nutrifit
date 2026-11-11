@@ -720,3 +720,8 @@ body.has-nav .timer { bottom: calc(74px + env(safe-area-inset-bottom)); }
 .kg-open { margin-top: 10px; }
 .kg-marks { position: relative; }
 .kg-bmr { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+
+/* Botones de foto: cámara, fototeca y anotar a mano */
+.food-actions .span2 { grid-column: 1 / -1; }
+.btn.primary.soft { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
+[data-theme="dark"] .btn.primary.soft { color: var(--accent-hi); }
