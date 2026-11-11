@@ -660,3 +660,16 @@ body.has-nav .timer { bottom: calc(74px + env(safe-area-inset-bottom)); }
 #wdate { flex: 1 1 9em; min-width: 0; }
 #wkg { flex: 1 1 5.5em; min-width: 5.5em; }
 .inline-form:has(#wdate) { flex-wrap: wrap; }
+
+/* Anotar a mano: no encontrado, Claude y etiqueta */
+.mf-none { background: var(--bg); border-radius: 14px; padding: 12px; margin: 8px 0; }
+.mf-none p { margin: 0 0 10px; }
+.mf-lbl { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 8px 0; }
+.mf-lbl input, .mf-lbl select { font-weight: 400; }
+.mf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5em, 1fr)); gap: 0 10px; }
+.mf-qty { display: flex; gap: 6px; }
+.mf-qty input { flex: 1; min-width: 0; }
+.mf-qty select { flex: none; width: 4.5em; }
+.chk { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 8px 0; }
+.tiny { font-size: 11px; margin-top: 10px; }
+.food-search button { display: flex; justify-content: space-between; gap: 8px; text-align: left; }

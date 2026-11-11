@@ -482,7 +482,7 @@
       for (const p of S.profiles()) {
         const e = Object.values(p.food || {}).flat().find((x) => x.id === id);
         if (!e) continue;
-        if (e.hecho) { fotosEnEspera.delete(id); toast(`✅ Claude anotó tu foto: ${e.plato || 'plato'} · ${Math.round(e.total || 0)} kcal`); }
+        if (e.hecho) { fotosEnEspera.delete(id); toast(`✅ Claude anotó ${e.consulta ? '' : 'tu foto: '}${e.plato || e.consulta || 'plato'} · ${Math.round(e.total || 0)} kcal`); }
         else if (e.err) { fotosEnEspera.delete(id); toast('⚠️ ' + e.err, 'warn'); }
       }
     }
@@ -496,75 +496,173 @@
     setTimeout(() => el.remove(), 5200);
   }
 
-  // ---------- Anotar a mano (gramos o ml) ----------
+  // ---------- Anotar a mano ----------
+  // Busca en: alimentos comunes (js/foods.js + foods-mas.js), tus alimentos (agregados por ti o por Claude) y
+  // ~2.300 productos de supermercados de Chile (Open Food Facts, js/alimentos-chile.json, se carga al abrir).
+  // Si no está: Claude lo calcula (en tu PC) o lo escribes tú con la etiqueta, y queda guardado para la próxima vez.
+  let PRODUCTOS = null;
+  function cargarProductos() {
+    if (PRODUCTOS) return Promise.resolve(PRODUCTOS);
+    return fetch('js/alimentos-chile.json').then((r) => r.json()).then((j) => {
+      PRODUCTOS = j.productos.map((a) => ({ n: a[0], marca: a[1], kcal: a[2], p: a[3], c: a[4], g: a[5], fb: a[6], ml: !!a[7], porcion: a[8] || 100, src: 'off' }));
+      return PRODUCTOS;
+    }).catch(() => (PRODUCTOS = []));
+  }
+  const normTxt = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ ]/g, ' ');
+  function buscarAlimentos(q) {
+    const mios = Object.values(S.foods()).filter((f) => f && f.n);
+    const comunes = window.FOODS.map((f) => ({ ...f, src: f.src || 'base' }));
+    const t = normTxt(q).trim();
+    if (!t) return [...mios.sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, 5), ...comunes.slice(0, 6)];
+    // Cada palabra debe aparecer (sin importar tildes ni plurales simples)
+    const palabras = t.split(/\s+/).filter((w) => w.length > 1 && !['de', 'del', 'la', 'el', 'con', 'en', 'y'].includes(w)).map((w) => (w.length > 4 ? w.replace(/(es|s)$/, '') : w));
+    const vistos = new Set();
+    const res = [];
+    [[mios, 0], [comunes, 1], [PRODUCTOS || [], 2]].forEach(([lista, grupo]) => {
+      for (const f of lista) {
+        const h = normTxt(f.n + ' ' + (f.marca || ''));
+        if (!palabras.every((w) => h.includes(w))) continue;
+        const k = normTxt(f.n) + '|' + normTxt(f.marca);
+        if (vistos.has(k)) continue;
+        vistos.add(k);
+        const empieza = normTxt(f.n).startsWith(palabras[0] || '') ? 0 : 1;
+        res.push({ f, s: grupo * 10 + empieza * 3 + Math.min(3, f.n.length / 25) });
+      }
+    });
+    return res.sort((a, b) => a.s - b.s).slice(0, 25).map((x) => x.f);
+  }
+
   function openManualFood(p) {
     const meal = mealByHour(), dia = diaSel();
     modal.innerHTML = `
       <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="Anotar comida">
         <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
         <h2>✍️ Anotar comida${dia === dayKey() ? '' : ` <span class="muted small">· ${esc(diaNombre(dia, true))}</span>`}</h2>
-        <input id="mfq" type="search" placeholder="🔍 Busca un alimento (ej: marraqueta, leche, palta)" autocomplete="off">
+        <input id="mfq" type="search" placeholder="🔍 Alimento o producto (ej: galletas de arroz, leche Colun)" autocomplete="off">
         <ul class="food-search" id="mfres"></ul>
+        <div id="mfnone" class="mf-none" hidden>
+          <p id="mfnonetxt"></p>
+          <div class="stack">
+            <button class="btn primary" id="mfai">🤖 Que Claude lo calcule</button>
+            <button class="btn ghost" id="mfown">🏷️ Escribirlo yo (con la etiqueta)</button>
+          </div>
+        </div>
         <div id="mfform" hidden>
           <p class="mf-name"><strong id="mfname"></strong> <span class="muted small" id="mfhint"></span></p>
           <div class="inline-form"><input id="mfqty" type="number" inputmode="decimal" min="0"><span id="mfunit" class="mf-unit"></span></div>
           <p class="food-total"><strong id="mfkcal">0</strong> kcal</p>
         </div>
-        <details class="mf-custom"><summary>¿No está en la lista? Escríbelo tú</summary>
-          <input id="mcname" type="text" placeholder="Nombre (ej: sushi)">
-          <div class="inline-form"><input id="mckcal" type="number" inputmode="decimal" placeholder="Calorías totales"><span class="mf-unit">kcal</span></div>
-        </details>
+        <div id="mfaiform" hidden>
+          <p class="muted small">Claude busca los valores de ese producto (también de marcas chilenas) y lo anota solo en tu día. Lo nuevo queda guardado en tus alimentos.</p>
+          <label class="mf-lbl">¿Qué comiste?<input id="aiq" type="text" placeholder="Ej: galletas de arroz Líder"></label>
+          <label class="mf-lbl">¿Cuánto?<input id="aicant" type="text" placeholder="Ej: 3 galletas, 1 taza, 150 g"></label>
+          <p class="small" id="aipc"></p>
+        </div>
+        <div id="mfownform" hidden>
+          <label class="mf-lbl">Nombre<input id="oname" type="text" placeholder="Ej: Galletas de arroz Líder"></label>
+          <div class="mf-grid">
+            <label class="mf-lbl"><span>Calorías por 100 <span class="ou">g</span></span><input id="okcal" type="number" inputmode="decimal" min="0"></label>
+            <label class="mf-lbl">Cantidad que comiste<span class="mf-qty"><input id="oqty" type="number" inputmode="decimal" min="0"><select id="ounit"><option value="g">g</option><option value="ml">ml</option></select></span></label>
+            <label class="mf-lbl"><span>Proteínas /100 <span class="ou">g</span></span><input id="op" type="number" inputmode="decimal" min="0" placeholder="opcional"></label>
+            <label class="mf-lbl"><span>Carbohidratos /100 <span class="ou">g</span></span><input id="oc" type="number" inputmode="decimal" min="0" placeholder="opcional"></label>
+            <label class="mf-lbl"><span>Grasas /100 <span class="ou">g</span></span><input id="og" type="number" inputmode="decimal" min="0" placeholder="opcional"></label>
+            <label class="mf-lbl"><span>Fibra /100 <span class="ou">g</span></span><input id="ofb" type="number" inputmode="decimal" min="0" placeholder="opcional"></label>
+          </div>
+          <label class="mf-lbl">¿Solo sabes las calorías totales?<input id="ototal" type="number" inputmode="decimal" min="0" placeholder="Calorías de lo que comiste (opcional)"></label>
+          <label class="chk"><input type="checkbox" id="okeep" checked> Guardar en mis alimentos para la próxima vez</label>
+          <p class="food-total"><strong id="okc">0</strong> kcal</p>
+        </div>
         <label class="meal-sel">Comida: <select id="mfmeal">${MEALS.map(([k, l]) => `<option value="${k}" ${k === meal ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <button class="btn primary wide" id="mfsave" disabled>Guardar en mi día</button>
+        <p class="muted tiny center">Productos de Chile: Open Food Facts (base abierta, ODbL).</p>
       </div>`;
     modal.classList.remove('hidden');
-    const q = modal.querySelector('#mfq'), res = modal.querySelector('#mfres'), save = modal.querySelector('#mfsave');
-    const norm = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    // Base de la app + alimentos que Claude fue agregando (✨)
-    const base = new Set(window.FOODS.map((f) => norm(f.n)));
-    const all = [...window.FOODS, ...Object.values(S.foods()).filter((f) => f && f.n && !base.has(norm(f.n))).sort((x, y) => x.n.localeCompare(y.n))];
-    let sel = null;
+    const $m = (s) => modal.querySelector(s);
+    const q = $m('#mfq'), res = $m('#mfres'), save = $m('#mfsave');
+    const num = (s) => { const v = parseFloat(String($m(s).value).replace(',', '.')); return v >= 0 ? v : NaN; };
+    let sel = null, modo = 'buscar';
+    const mostrar = (m) => {
+      modo = m;
+      $m('#mfform').hidden = m !== 'sel';
+      $m('#mfaiform').hidden = m !== 'ai';
+      $m('#mfownform').hidden = m !== 'own';
+      save.textContent = m === 'ai' ? '🤖 Enviar a Claude' : 'Guardar en mi día';
+      calc();
+    };
+    // Lo escrito por la persona: total o por 100 g × cantidad
+    const propio = () => {
+      const k100 = num('#okcal'), qty = num('#oqty'), tot = num('#ototal');
+      const f = qty > 0 ? qty / 100 : NaN;
+      const kcal = tot >= 0 && $m('#ototal').value !== '' ? tot : k100 * f;
+      const m = (s) => (num(s) >= 0 && f > 0 ? Math.round(num(s) * f * 10) / 10 : 0);
+      return { kcal: Math.round(kcal), k100, qty, f, p: m('#op'), c: m('#oc'), g: m('#og'), fb: m('#ofb') };
+    };
     const calc = () => {
-      const custom = modal.querySelector('#mcname').value.trim() && +modal.querySelector('#mckcal').value > 0;
-      if (sel) {
-        const v = Math.max(0, parseFloat(modal.querySelector('#mfqty').value) || 0), k = v / 100;
-        modal.querySelector('#mfkcal').textContent = Math.round(sel.kcal * k);
-      }
-      save.disabled = !(sel || custom);
+      if (modo === 'sel' && sel) {
+        const v = Math.max(0, num('#mfqty') || 0);
+        $m('#mfkcal').textContent = Math.round(sel.kcal * v / 100);
+        save.disabled = !(v > 0);
+      } else if (modo === 'ai') {
+        save.disabled = !$m('#aiq').value.trim();
+        $m('#aipc').innerHTML = !Sync.conectado() ? '⚠️ Para usar a Claude, conecta este aparato a tu nube (Perfil → Nube).'
+          : Sync.pcEncendido() ? '🟢 Tu PC está encendido: queda anotado en menos de un minuto.' : '⚪ Tu PC está apagado: queda en espera y se anota solo al encenderlo.';
+        if (!Sync.conectado()) save.disabled = true;
+      } else if (modo === 'own') {
+        const o = propio();
+        $m('#okc').textContent = o.kcal >= 0 ? o.kcal : 0;
+        modal.querySelectorAll('.ou').forEach((x) => { x.textContent = $m('#ounit').value; });
+        save.disabled = !($m('#oname').value.trim() && o.kcal >= 0 && (o.qty > 0 || $m('#ototal').value !== ''));
+      } else save.disabled = true;
     };
     const list = () => {
-      const t = norm(q.value.trim());
-      const found = all.filter((f) => !t || norm(f.n).includes(t)).slice(0, 8);
-      res.innerHTML = found.map((f) => `<li><button data-f="${all.indexOf(f)}">${esc(f.n)}${f.src === 'claude' ? ' ✨' : ''} <span class="muted small">${f.kcal} kcal / 100 ${f.ml ? 'ml' : 'g'}</span></button></li>`).join('');
+      const texto = q.value.trim();
+      const found = buscarAlimentos(texto);
+      res.innerHTML = found.map((f, i) => `<li><button data-f="${i}"><span>${esc(f.n)}${f.marca ? ` <span class="muted small">· ${esc(f.marca)}</span>` : ''}${f.src === 'claude' ? ' ✨' : f.src === 'mio' ? ' 📝' : ''}</span> <span class="muted small">${f.kcal} kcal / 100 ${f.ml ? 'ml' : 'g'}</span></button></li>`).join('');
       res.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => {
-        sel = all[+b.dataset.f];
-        modal.querySelector('#mfform').hidden = false;
-        modal.querySelector('#mfname').textContent = sel.n;
-        modal.querySelector('#mfhint').textContent = sel.u || '';
-        modal.querySelector('#mfunit').textContent = sel.ml ? 'ml' : 'g';
-        modal.querySelector('#mfqty').value = sel.porcion;
+        sel = found[+b.dataset.f];
+        $m('#mfname').textContent = sel.n + (sel.marca ? ' · ' + sel.marca : '');
+        $m('#mfhint').textContent = sel.u || (sel.src === 'off' ? 'tabla nutricional del envase' : '');
+        $m('#mfunit').textContent = sel.ml ? 'ml' : 'g';
+        $m('#mfqty').value = sel.porcion || 100;
         res.innerHTML = '';
+        $m('#mfnone').hidden = true;
         q.value = sel.n;
-        calc();
+        mostrar('sel');
       });
+      const largo = texto.length >= 3;
+      $m('#mfnone').hidden = !largo || modo === 'ai' || modo === 'own';
+      $m('#mfnonetxt').innerHTML = found.length ? '¿No es ninguno de estos?' : `No encontré <strong>${esc(texto)}</strong> en la base.`;
     };
-    q.oninput = () => { sel = null; modal.querySelector('#mfform').hidden = true; list(); calc(); };
-    modal.querySelector('#mfqty').oninput = calc;
-    modal.querySelector('#mcname').oninput = calc;
-    modal.querySelector('#mckcal').oninput = calc;
-    modal.querySelector('.m-close').onclick = closeModal;
+    q.oninput = () => { sel = null; if (modo === 'sel') mostrar('buscar'); list(); };
+    $m('#mfai').onclick = () => { $m('#aiq').value = q.value.trim(); $m('#mfnone').hidden = true; res.innerHTML = ''; mostrar('ai'); $m('#aicant').focus(); };
+    $m('#mfown').onclick = () => { $m('#oname').value = q.value.trim(); $m('#mfnone').hidden = true; res.innerHTML = ''; mostrar('own'); $m('#okcal').focus(); };
+    modal.querySelectorAll('#mfqty, #aiq, #aicant, #mfownform input').forEach((x) => { x.oninput = calc; });
+    $m('#ounit').onchange = calc;
+    $m('.m-close').onclick = closeModal;
     save.onclick = () => {
-      const mk = modal.querySelector('#mfmeal').value;
-      if (sel) {
-        const v = Math.max(0, parseFloat(modal.querySelector('#mfqty').value) || 0), k = v / 100;
-        addFood(p.id, [{ name: sel.n, gr: sel.ml ? null : v, ml: sel.ml ? v : null, kcal: Math.round(sel.kcal * k), p: Math.round(sel.p * k), c: Math.round(sel.c * k), g: Math.round(sel.g * k), fb: Math.round((sel.fb || 0) * k * 10) / 10, meal: mk, src: 'manual' }], dia);
-      } else {
-        addFood(p.id, [{ name: modal.querySelector('#mcname').value.trim(), kcal: Math.round(+modal.querySelector('#mckcal').value), p: 0, c: 0, g: 0, meal: mk, src: 'manual' }], dia);
+      const mk = $m('#mfmeal').value;
+      if (modo === 'sel' && sel) {
+        const v = Math.max(0, num('#mfqty') || 0), k = v / 100;
+        addFood(p.id, [{ name: sel.n + (sel.marca ? ' · ' + sel.marca : ''), gr: sel.ml ? null : v, ml: sel.ml ? v : null, kcal: Math.round(sel.kcal * k), p: Math.round(sel.p * k), c: Math.round(sel.c * k), g: Math.round(sel.g * k), fb: Math.round((sel.fb || 0) * k * 10) / 10, meal: mk, src: 'manual' }], dia);
+      } else if (modo === 'ai') {
+        const id = 'c' + uidF(), consulta = $m('#aiq').value.trim(), cant = $m('#aicant').value.trim();
+        addFood(p.id, [{ id, pend: true, consulta, cant, name: consulta, kcal: 0, meal: mk, src: 'claude' }], dia);
+        fotosEnEspera.add(id);
+        Sync.sync();
+        toast(Sync.pcEncendido() ? '🤖 Claude lo está calculando…' : '🤖 Quedó en espera: Claude lo calcula al encender el PC');
+      } else if (modo === 'own') {
+        const o = propio(), ml = $m('#ounit').value === 'ml', name = $m('#oname').value.trim();
+        addFood(p.id, [{ name, gr: !ml && o.qty > 0 ? o.qty : null, ml: ml && o.qty > 0 ? o.qty : null, kcal: o.kcal, p: Math.round(o.p), c: Math.round(o.c), g: Math.round(o.g), fb: o.fb, meal: mk, src: 'manual' }], dia);
+        if ($m('#okeep').checked && o.k100 >= 0 && $m('#okcal').value !== '') {
+          const v = (s) => (num(s) >= 0 ? num(s) : 0);
+          S.setFood(NutriMerge.normNombre(name), { n: name, kcal: Math.round(o.k100), p: v('#op'), c: v('#oc'), g: v('#og'), fb: v('#ofb'), ml, porcion: o.qty > 0 ? Math.round(o.qty) : 100, u: 'agregado por ti', src: 'mio', t: Date.now() });
+        }
       }
       closeModal();
       renderPlan(p.id, 'nutri');
     };
     list();
+    cargarProductos().then(() => { if (!modal.classList.contains('hidden') && modo === 'buscar') list(); });
     q.focus();
   }
 
@@ -1245,7 +1343,7 @@
         if (!list.length) return '';
         const kc = list.reduce((t, e) => t + e.kcal, 0);
         return `<div class="card meal"><h3>${ml} <span class="muted small">${Math.round(kc)} kcal</span></h3>
-          <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>📷 ${e.err ? esc(e.err) : 'Foto en espera de Claude…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : Sync.pcEncendido() ? ' · se está revisando' : ' · se revisa al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
+          <ul class="list compact">${list.map((e) => e.pend || e.err ? `<li class="food-pend ${e.err ? 'bad' : ''}"><span>${e.consulta ? '🤖' : '📷'} ${e.err ? esc(e.err) : e.consulta ? `Claude calcula: ${esc(e.consulta)}${e.cant ? ' · ' + esc(e.cant) : ''}` : 'Foto en espera de Claude…'}<small class="muted">${e.err ? '' : e.aviso ? ' · ' + esc(e.aviso) : Sync.pcEncendido() ? ' · se está revisando' : ' · se revisa al encender el PC'}</small></span><strong></strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`
             : `<li><span ${e.foto ? `class="food-rev" data-rev="${e.foto}" role="button" tabindex="0"` : ''}>${esc(e.name)}<small class="muted"> · ${e.ml ? e.ml + ' ml' : e.gr ? e.gr + ' g' : ''}${e.src === 'foto' ? ' · 📷' : ''}</small></span><strong>${Math.round(e.kcal)} kcal</strong><button class="food-del" data-del="${e.id}" aria-label="Quitar">×</button></li>`).join('')}</ul></div>`;
       }).join('')}
       ${entries.length ? '' : `<p class="muted center">${esHoy ? 'Todavía no anotas nada hoy.' : 'No anotaste nada este día. Puedes completarlo ahora.'}</p>`}

@@ -41,6 +41,7 @@
     },
     // Alimentos agregados (por Claude o a mano), por 100 g o 100 ml
     foods: () => db.foods || {},
+    setFood(k, f) { db.foods = db.foods || {}; db.foods[k] = f; save(); },
     remove(id) {
       db.profiles = db.profiles.filter((p) => p.id !== id);
       db.deleted[id] = Date.now();
