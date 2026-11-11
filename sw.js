@@ -1,6 +1,6 @@
 // Service worker: guarda la app en caché para que funcione sin conexión.
 // Sube la versión cada vez que cambies archivos para que los dispositivos descarguen la nueva.
-const VERSION = 'calistenia-v22';
+const VERSION = 'calistenia-v23';
 const FILES = [
   './', './index.html', './manifest.webmanifest', './css/styles.css',
   './js/config.js', './js/quiz-data.js', './js/exercises.js', './js/planner.js', './js/foods.js', './js/foods-mas.js', './js/alimentos-chile.json', './js/anim.js', './js/nube.js', './js/merge.js', './js/store.js', './js/sync.js', './js/app.js', './js/anim3d.js',

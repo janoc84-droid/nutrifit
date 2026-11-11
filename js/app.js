@@ -513,6 +513,14 @@
     return o;
   };
   const etiquetasEnEspera = new Set();
+  // Lo que se le agrega a un líquido o a una comida: cada toque suma una porción (con sus calorías)
+  const AGREGADOS = {
+    liquido: [['Azúcar', 'cdta', 5, 'Azúcar'], ['Stevia', 'gotas', 1, 'Stevia líquida (gotas)'], ['Miel', 'cdta', 7, 'Miel'],
+      ['Leche', 'chorrito 30 ml', 30, 'Leche semidescremada'], ['Crema para café', 'cdta', 5, 'Sustituto de crema para café (polvo)']],
+    solido: [['Aceite', 'cda', 10, 'Aceite vegetal'], ['Aceite de oliva', 'cda', 10, 'Aceite de oliva'], ['Mantequilla', 'cdta', 5, 'Mantequilla'],
+      ['Mayonesa', 'cda', 15, 'Mayonesa'], ['Sal', 'pizca', 1, 'Sal']],
+  };
+  const alimentoBase = (n) => window.FOODS.find((f) => f.n === n);
   let PRODUCTOS = null;
   function cargarProductos() {
     if (PRODUCTOS) return Promise.resolve(PRODUCTOS);
@@ -545,8 +553,8 @@
     return res.sort((a, b) => a.s - b.s).slice(0, 25).map((x) => x.f);
   }
 
-  function openManualFood(p) {
-    const meal = mealByHour(), dia = diaSel();
+  function openManualFood(p, opts = {}) {
+    const meal = opts.meal || mealByHour(), dia = diaSel();
     modal.innerHTML = `
       <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="Anotar comida">
         <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
@@ -566,6 +574,7 @@
           <div class="inline-form"><input id="mfqty" type="number" inputmode="decimal" min="0"><span id="mfunit" class="mf-unit"></span></div>
           <p class="food-total"><strong id="mfkcal">0</strong> kcal</p>
           <div id="mfextra" class="mf-extra"></div>
+          <div id="mfadd" class="agregados"></div>
         </div>
         <div id="mflabelform" hidden>
           <p class="muted small">Saca una foto a la tabla <strong>"Información nutricional"</strong> del envase. Claude lee todos los datos (calorías, proteínas, grasas saturadas, mono y poliinsaturadas, trans, colesterol, carbohidratos, azúcares, fibra, sodio, porción y sellos) y guarda el producto en tus alimentos.</p>
@@ -606,7 +615,17 @@
     const $m = (s) => modal.querySelector(s);
     const q = $m('#mfq'), res = $m('#mfres'), save = $m('#mfsave');
     const num = (s) => { const v = parseFloat(String($m(s).value).replace(',', '.')); return v >= 0 ? v : NaN; };
-    let sel = null, modo = 'buscar', fotoEtiqueta = null;
+    let sel = null, modo = 'buscar', fotoEtiqueta = null, mealTocado = false, agreg = {};
+    const listaAgreg = () => (sel ? AGREGADOS[sel.ml ? 'liquido' : 'solido'] : []);
+    const kcalAgreg = () => listaAgreg().reduce((t, [n, , g, base]) => t + (agreg[n] || 0) * g * ((alimentoBase(base)?.kcal || 0) / 100), 0);
+    const pintarAgregados = () => {
+      const l = listaAgreg();
+      $m('#mfadd').innerHTML = `<p class="muted small">${sel.ml ? '¿Le pusiste algo?' : '¿Con algo más?'} Cada toque suma una porción:</p>
+        <div class="ag-chips">${l.map(([n, u]) => `<button class="ag-chip ${agreg[n] ? 'on' : ''}" data-ag="${esc(n)}">+ ${esc(n)} <small>${esc(u)}</small>${agreg[n] ? `<b>×${agreg[n]}</b>` : ''}</button>`).join('')}
+        ${Object.values(agreg).some(Boolean) ? '<button class="ag-chip reset" id="agreset">↺ Quitar</button>' : ''}</div>`;
+      modal.querySelectorAll('[data-ag]').forEach((b) => b.onclick = () => { agreg[b.dataset.ag] = (agreg[b.dataset.ag] || 0) + 1; pintarAgregados(); calc(); });
+      const r = $m('#agreset'); if (r) r.onclick = () => { agreg = {}; pintarAgregados(); calc(); };
+    };
     const mostrar = (m) => {
       modo = m;
       $m('#mfform').hidden = m !== 'sel';
@@ -627,7 +646,7 @@
     const calc = () => {
       if (modo === 'sel' && sel) {
         const v = Math.max(0, num('#mfqty') || 0);
-        $m('#mfkcal').textContent = Math.round(sel.kcal * v / 100);
+        $m('#mfkcal').textContent = Math.round(sel.kcal * v / 100 + kcalAgreg());
         save.disabled = !(v > 0);
       } else if (modo === 'ai') {
         save.disabled = !$m('#aiq').value.trim();
@@ -655,9 +674,12 @@
         $m('#mfhint').textContent = sel.u || (sel.src === 'off' ? 'tabla nutricional del envase' : '');
         $m('#mfunit').textContent = sel.ml ? 'ml' : 'g';
         $m('#mfqty').value = sel.porcion || 100;
+        if (sel.ml && !mealTocado && !opts.meal) $m('#mfmeal').value = /vino|cerveza|pisco|ron|whisky|vodka|trago|terremoto|cola de mono|michelada|mojito|ponche|sangr/i.test(sel.n) ? 'tragos' : 'liquidos';
         const ex = EXTRAS.filter(([x]) => sel[x] !== undefined);
         $m('#mfextra').innerHTML = (sel.sellos || []).map((t) => `<span class="sello">${esc(t)}</span>`).join('')
           + (ex.length || sel.otros ? `<p class="muted small">Por 100 ${sel.ml ? 'ml' : 'g'}: ${[...ex.map(([x, l, u]) => `${l.toLowerCase()} ${sel[x]} ${u}`), ...Object.entries(sel.otros || {}).map(([n, [v, u]]) => `${esc(n.toLowerCase())} ${v} ${esc(u)}`)].join(' · ')}</p>` : '');
+        agreg = {};
+        pintarAgregados();
         res.innerHTML = '';
         $m('#mfnone').hidden = true;
         q.value = sel.n;
@@ -681,12 +703,20 @@
     $m('#mfown').onclick = () => { $m('#oname').value = q.value.trim(); $m('#mfnone').hidden = true; res.innerHTML = ''; mostrar('own'); $m('#okcal').focus(); };
     modal.querySelectorAll('#mfqty, #aiq, #aicant, #mfownform input').forEach((x) => { x.oninput = calc; });
     $m('#ounit').onchange = calc;
+    $m('#mfmeal').onchange = () => { mealTocado = true; };
     $m('.m-close').onclick = closeModal;
     save.onclick = () => {
       const mk = $m('#mfmeal').value;
       if (modo === 'sel' && sel) {
         const v = Math.max(0, num('#mfqty') || 0), k = v / 100;
-        addFood(p.id, [{ name: sel.n + (sel.marca ? ' · ' + sel.marca : ''), gr: sel.ml ? null : v, ml: sel.ml ? v : null, kcal: Math.round(sel.kcal * k), p: Math.round(sel.p * k), c: Math.round(sel.c * k), g: Math.round(sel.g * k), fb: Math.round((sel.fb || 0) * k * 10) / 10, ...extrasDe(sel, k), meal: mk, src: 'manual' }], dia);
+        const reg = [{ name: sel.n + (sel.marca ? ' · ' + sel.marca : ''), gr: sel.ml ? null : v, ml: sel.ml ? v : null, kcal: Math.round(sel.kcal * k), p: Math.round(sel.p * k), c: Math.round(sel.c * k), g: Math.round(sel.g * k), fb: Math.round((sel.fb || 0) * k * 10) / 10, ...extrasDe(sel, k), meal: mk, src: 'manual' }];
+        for (const [n, u, g, base] of listaAgreg()) {
+          const cnt = agreg[n], b = alimentoBase(base);
+          if (!cnt || !b) continue;
+          const q2 = cnt * g, k2 = q2 / 100;
+          reg.push({ name: `${n} (${cnt} ${u}) · en ${sel.n}`, gr: b.ml ? null : q2, ml: b.ml ? q2 : null, kcal: Math.round(b.kcal * k2), p: Math.round(b.p * k2 * 10) / 10, c: Math.round(b.c * k2 * 10) / 10, g: Math.round(b.g * k2 * 10) / 10, fb: Math.round((b.fb || 0) * k2 * 10) / 10, ...extrasDe(b, k2), meal: mk, src: 'manual' });
+        }
+        addFood(p.id, reg, dia);
       } else if (modo === 'ai') {
         const id = 'c' + uidF(), consulta = $m('#aiq').value.trim(), cant = $m('#aicant').value.trim();
         addFood(p.id, [{ id, pend: true, consulta, cant, name: consulta, kcal: 0, meal: mk, src: 'claude' }], dia);
@@ -714,8 +744,15 @@
       renderPlan(p.id, 'nutri');
     };
     list();
-    cargarProductos().then(() => { if (!modal.classList.contains('hidden') && modo === 'buscar') list(); });
-    q.focus();
+    if (opts.elegir) {
+      q.value = opts.elegir; list();
+      const b = [...res.querySelectorAll('[data-f]')].find((x) => x.textContent.trim().startsWith(opts.elegir));
+      if (b) b.click();
+    } else {
+      cargarProductos().then(() => { if (!modal.classList.contains('hidden') && modo === 'buscar') list(); });
+      q.focus();
+    }
+    if (opts.elegir) cargarProductos();
   }
 
   // ---------- Nube (sincronización entre aparatos) ----------
@@ -1235,8 +1272,15 @@
 
   // ---------- Comidas del día ----------
   const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const MEALS = [['desayuno', '☕ Desayuno'], ['almuerzo', '🍽️ Almuerzo'], ['once', '🥪 Once'], ['cena', '🌙 Cena'], ['snack', '🍎 Snack']];
-  function mealByHour(h = new Date().getHours()) { return h < 11 ? 'desayuno' : h < 16 ? 'almuerzo' : h < 19 ? 'once' : h < 23 ? 'cena' : 'snack'; }
+  // Comidas del día, en el orden en que se muestran. Las claves antiguas (desayuno, almuerzo, once, cena, snack) no cambian.
+  const MEALS = [
+    ['desayuno', '☕ Desayuno'], ['media', '🍎 Media mañana'], ['almuerzo', '🍽️ Almuerzo'], ['postre', '🍮 Postre'],
+    ['once', '🥪 Once'], ['colacion', '🥨 Colación de la tarde'], ['cena', '🌙 Cena'], ['snack', '🍿 Snack o picoteo'],
+    ['pre', '💪 Antes de entrenar'], ['post', '🥤 Después de entrenar'], ['liquidos', '💧 Líquidos'], ['tragos', '🍷 Tragos'],
+    ['suplementos', '💊 Suplementos'],
+  ];
+  const MEAL_KEYS = new Set(MEALS.map(([k]) => k));
+  function mealByHour(h = new Date().getHours()) { return h < 10 ? 'desayuno' : h < 12 ? 'media' : h < 16 ? 'almuerzo' : h < 19 ? 'once' : h < 23 ? 'cena' : 'snack'; }
   // Día que se está mirando en Nutrición (hoy, o uno anterior para revisar o completar)
   const fromKey = (k) => { const [y, mo, d] = k.split('-').map(Number); return new Date(y, mo - 1, d); };
   function diaSel() { const hoy = dayKey(); return ui.dia && ui.dia < hoy ? ui.dia : hoy; }
@@ -1295,6 +1339,28 @@
     });
   }
   function dayEntries(p, key = dayKey()) { return ((p.food || {})[key] || []).filter((e) => !e.deleted); }
+  function liquidosDia(p, key) { return dayEntries(p, key).filter((e) => e.ml > 0 && e.meal !== 'tragos' && !e.pend).reduce((t, e) => t + e.ml, 0); }
+  const LIQ_RAPIDOS = {
+    agua: { name: 'Agua', ml: 250, kcal: 0, p: 0, c: 0, g: 0 },
+    te: { name: 'Té o infusión', ml: 250, kcal: 2, p: 0, c: 0.3, g: 0 },
+    cafe: { name: 'Café solo', ml: 200, kcal: 2, p: 0.2, c: 0, g: 0 },
+  };
+  function liquidosCard(p, key, metaL) {
+    const ml = liquidosDia(p, key), meta = Math.round(metaL * 1000), pct = Math.min(100, Math.round((ml / meta) * 100));
+    const L = (x) => (x / 1000).toLocaleString('es', { maximumFractionDigits: 2 });
+    return `
+      <div class="card liq-card">
+        <h3>💧 Líquidos del día <span class="muted small">${L(ml)} de ${L(meta)} L</span></h3>
+        <div class="bar liq"><i style="width:${pct}%"></i></div>
+        <div class="liq-btns">
+          <button class="btn ghost small" data-liq="agua">+ Vaso de agua</button>
+          <button class="btn ghost small" data-liq="te">+ Té o infusión</button>
+          <button class="btn ghost small" data-liq="cafe">+ Café</button>
+          <button class="btn ghost small" id="liqotro">+ Otro (jugo, leche…)</button>
+        </div>
+        <p class="muted small">Cuentan el agua, el té, el café, los jugos y la leche. Los tragos no suman. ${ml >= meta ? '✅ ¡Meta cumplida!' : `Te faltan ${L(meta - ml)} L.`}</p>
+      </div>`;
+  }
   function dayTotals(p, key) {
     return dayEntries(p, key).reduce((t, e) => ({ kcal: t.kcal + (e.kcal || 0), p: t.p + (e.p || 0), c: t.c + (e.c || 0), g: t.g + (e.g || 0), fb: t.fb + (e.fb || 0), azu: t.azu + (e.azu || 0), sod: t.sod + (e.sod || 0), sat: t.sat + (e.sat || 0) }), { kcal: 0, p: 0, c: 0, g: 0, fb: 0, azu: 0, sod: 0, sat: 0 });
   }
@@ -1389,10 +1455,11 @@
         <label class="btn primary">📷 ${esHoy ? 'Foto del plato' : 'Foto de ese día'}<input type="file" id="foodphoto" accept="image/*" ${esHoy ? 'capture="environment"' : ''} hidden></label>
         <button class="btn ghost" id="foodmanual">✍️ Anotar a mano</button>
       </div>
+      ${liquidosCard(p, key, n.water)}
       ${esHoy ? '<label class="btn link small center-link">🖼️ O elige una foto de la galería<input type="file" id="foodgal" accept="image/*" hidden></label>' : ''}
       <p class="muted small center">Claude revisa la foto con tu suscripción, en tu PC, y la anota sola en tu día. Si el PC está apagado, la foto espera hasta que lo enciendas. Es un cálculo aproximado.</p>
       ${MEALS.map(([mk, ml]) => {
-        const list = entries.filter((e) => e.meal === mk);
+        const list = entries.filter((e) => (MEAL_KEYS.has(e.meal) ? e.meal : 'snack') === mk);
         if (!list.length) return '';
         const kc = list.reduce((t, e) => t + e.kcal, 0);
         return `<div class="card meal"><h3>${ml} <span class="muted small">${Math.round(kc)} kcal</span></h3>
@@ -1596,6 +1663,16 @@
       bindDayNav(() => renderPlan(p.id, 'nutri'));
       $$('[data-del]').forEach((b) => b.onclick = () => { removeFood(p.id, k, b.dataset.del); renderPlan(p.id, 'nutri'); });
       $('#foodmanual').onclick = () => openManualFood(p);
+      $$('[data-liq]').forEach((b) => b.onclick = () => {
+        // Té y café: se abre para marcar azúcar, leche, etc.; el agua se anota al tiro
+        if (b.dataset.liq === 'te') return openManualFood(p, { meal: 'liquidos', elegir: 'Té negro solo' });
+        if (b.dataset.liq === 'cafe') return openManualFood(p, { meal: 'liquidos', elegir: 'Café negro / americano' });
+        const x = LIQ_RAPIDOS[b.dataset.liq];
+        addFood(p.id, [{ ...x, meal: 'liquidos', src: 'rapido' }], k);
+        toast(`💧 ${x.name} · ${x.ml} ml`);
+        renderPlan(p.id, 'nutri');
+      });
+      $('#liqotro').onclick = () => openManualFood(p, { meal: 'liquidos', q: '' });
       const foto = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) analyzePhoto(p, f); };
       $('#foodphoto').onchange = foto;
       const gal = $('#foodgal'); if (gal) gal.onchange = foto;

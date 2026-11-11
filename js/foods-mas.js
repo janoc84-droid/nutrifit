@@ -177,3 +177,162 @@ window.FOODS.push(
   { n: 'Leche con cereal (taza)', ml: true, kcal: 95, p: 3.5, c: 15, g: 2, porcion: 250, u: '' },
   { n: 'Mote con huesillo', ml: true, kcal: 95, p: 1, c: 23, g: 0.2, fb: 1.5, porcion: 300, u: '1 vaso' },
 );
+
+// Postres, antes y después de entrenar, y tragos (agregados el 11-11-2026)
+window.FOODS.push(
+  // Postres
+  { n: 'Leche asada', kcal: 150, p: 5.5, c: 22, g: 4.5, porcion: 120, u: '1 pote ≈ 120 g' },
+  { n: 'Arroz con leche', kcal: 130, p: 3.5, c: 23, g: 2.8, fb: 0.2, porcion: 150, u: '1 pote ≈ 150 g' },
+  { n: 'Sémola con leche', kcal: 120, p: 4, c: 20, g: 2.8, porcion: 150, u: '' },
+  { n: 'Flan', kcal: 130, p: 4, c: 21, g: 3.5, porcion: 120, u: '1 pote' },
+  { n: 'Crema volteada', kcal: 165, p: 5.5, c: 24, g: 5.5, porcion: 120, u: '' },
+  { n: 'Mousse de chocolate', kcal: 225, p: 4.5, c: 22, g: 13, fb: 1.5, porcion: 100, u: '1 pote' },
+  { n: 'Jalea / gelatina con azúcar', kcal: 62, p: 1.2, c: 14, g: 0, porcion: 150, u: '' },
+  { n: 'Jalea sin azúcar', kcal: 8, p: 1.5, c: 0.5, g: 0, porcion: 150, u: '' },
+  { n: 'Macedonia de frutas', kcal: 60, p: 0.7, c: 15, g: 0.2, fb: 1.6, porcion: 150, u: '' },
+  { n: 'Frutillas con crema', kcal: 140, p: 1.5, c: 10, g: 11, fb: 1.5, porcion: 150, u: '' },
+  { n: 'Duraznos en conserva con crema', kcal: 120, p: 1, c: 16, g: 6, fb: 1, porcion: 150, u: '' },
+  { n: 'Chirimoya alegre', kcal: 90, p: 1.4, c: 22, g: 0.5, fb: 2.5, porcion: 200, u: '' },
+  { n: 'Panqueques con manjar', kcal: 290, p: 7, c: 42, g: 10, fb: 0.8, porcion: 120, u: '2 panqueques' },
+  { n: 'Torta tres leches', kcal: 300, p: 6, c: 42, g: 12, porcion: 120, u: '1 trozo' },
+  { n: 'Tiramisú', kcal: 290, p: 5, c: 28, g: 17, porcion: 120, u: '' },
+  { n: 'Cheesecake', kcal: 320, p: 6, c: 26, g: 22, fb: 0.5, porcion: 120, u: '1 trozo' },
+  { n: 'Pie de limón', kcal: 300, p: 4, c: 45, g: 12, fb: 0.5, porcion: 110, u: '1 trozo' },
+  { n: 'Brownie', kcal: 430, p: 5, c: 55, g: 22, fb: 2, porcion: 60, u: '1 cuadrado' },
+  { n: 'Budín de pan', kcal: 220, p: 6, c: 35, g: 6, fb: 1, porcion: 120, u: '' },
+  { n: 'Picarones con chancaca', kcal: 330, p: 4, c: 50, g: 13, fb: 2, porcion: 100, u: '3 picarones' },
+  { n: 'Sopaipillas pasadas', kcal: 340, p: 4, c: 52, g: 13, fb: 1.5, porcion: 120, u: '2 unidades' },
+  { n: 'Chilenitos / empolvados', kcal: 400, p: 6, c: 62, g: 14, porcion: 50, u: '1 unidad' },
+  { n: 'Cuchuflí', kcal: 450, p: 6, c: 70, g: 16, porcion: 25, u: '1 unidad' },
+  { n: 'Dulce de membrillo', kcal: 270, p: 0.3, c: 68, g: 0.1, fb: 2, porcion: 30, u: '' },
+  { n: 'Helado de agua / paleta', kcal: 80, p: 0, c: 20, g: 0, porcion: 70, u: '1 paleta' },
+  { n: 'Helado de yogur', kcal: 130, p: 3.5, c: 22, g: 3.5, porcion: 100, u: '' },
+  { n: 'Chocolate amargo 70%', kcal: 600, p: 8, c: 46, g: 43, fb: 11, porcion: 20, u: '2 cuadritos ≈ 20 g' },
+  // Antes y después de entrenar
+  { n: 'Batido de proteína con leche', ml: true, kcal: 75, p: 9, c: 6, g: 1.8, porcion: 300, u: '1 vaso ≈ 300 ml' },
+  { n: 'Proteína en polvo (whey)', kcal: 390, p: 75, c: 9, g: 6, porcion: 30, u: '1 scoop ≈ 30 g' },
+  { n: 'Ganador de peso (gainer)', kcal: 380, p: 20, c: 70, g: 3, porcion: 100, u: '' },
+  { n: 'Creatina', kcal: 0, p: 0, c: 0, g: 0, porcion: 5, u: '1 cucharadita ≈ 5 g' },
+  { n: 'BCAA / aminoácidos', kcal: 0, p: 0, c: 0, g: 0, porcion: 7, u: '' },
+  { n: 'Pre-entreno (polvo)', kcal: 20, p: 0, c: 4, g: 0, porcion: 10, u: '1 scoop' },
+  { n: 'Gel energético', kcal: 260, p: 0, c: 65, g: 0, porcion: 40, u: '1 sobre ≈ 40 g' },
+  { n: 'Tostada con mantequilla de maní', kcal: 380, p: 14, c: 38, g: 19, fb: 4, porcion: 50, u: '1 tostada' },
+  { n: 'Avena con leche y plátano', kcal: 110, p: 4, c: 18, g: 2.2, fb: 1.8, porcion: 300, u: '1 tazón ≈ 300 g' },
+  { n: 'Yogur con granola', kcal: 150, p: 5, c: 22, g: 4.5, fb: 1.5, porcion: 200, u: '' },
+  { n: 'Leche chocolatada proteica', ml: true, kcal: 65, p: 6, c: 7, g: 1.3, porcion: 250, u: '' },
+  // Bebidas y tragos
+  { n: 'Té con azúcar', ml: true, kcal: 16, p: 0, c: 4, g: 0, porcion: 250, u: '1 taza (1 cucharadita de azúcar)' },
+  { n: 'Café con azúcar', ml: true, kcal: 18, p: 0.1, c: 4, g: 0, porcion: 250, u: '' },
+  { n: 'Agua de hierbas', ml: true, kcal: 1, p: 0, c: 0, g: 0, porcion: 250, u: '' },
+  { n: 'Jugo natural de naranja', ml: true, kcal: 45, p: 0.7, c: 10.4, g: 0.2, fb: 0.2, porcion: 250, u: '1 vaso' },
+  { n: 'Smoothie / batido de frutas', ml: true, kcal: 60, p: 1.5, c: 13, g: 0.5, fb: 1, porcion: 300, u: '' },
+  { n: 'Chocolate caliente', ml: true, kcal: 85, p: 3.3, c: 12, g: 2.8, fb: 0.6, porcion: 250, u: '1 taza' },
+  { n: 'Vino rosé / espumante', ml: true, kcal: 76, p: 0.1, c: 2, g: 0, porcion: 150, u: '1 copa' },
+  { n: 'Terremoto', ml: true, kcal: 130, p: 0.5, c: 18, g: 2, porcion: 400, u: '1 vaso' },
+  { n: 'Cola de mono', ml: true, kcal: 180, p: 2, c: 22, g: 1.5, porcion: 150, u: '1 vaso' },
+  { n: 'Michelada', ml: true, kcal: 40, p: 0.4, c: 4, g: 0, porcion: 500, u: '' },
+  { n: 'Ron / whisky / vodka con bebida', ml: true, kcal: 90, p: 0, c: 7, g: 0, porcion: 250, u: '1 vaso' },
+  { n: 'Ron / whisky / vodka solo', ml: true, kcal: 230, p: 0, c: 0, g: 0, porcion: 45, u: '1 corto ≈ 45 ml' },
+  { n: 'Mojito', ml: true, kcal: 110, p: 0, c: 13, g: 0, porcion: 250, u: '' },
+  { n: 'Ponche / sangría', ml: true, kcal: 95, p: 0.2, c: 11, g: 0, porcion: 200, u: '' },
+);
+
+// Líquidos (cafés, tés, infusiones, jugos y otras bebidas) y suplementos (agregados el 11-11-2026)
+window.FOODS.push(
+  // Cafés
+  { n: 'Café negro / americano', ml: true, kcal: 1, p: 0.1, c: 0, g: 0, porcion: 200, u: '1 taza' },
+  { n: 'Espresso', ml: true, kcal: 9, p: 0.1, c: 1.7, g: 0.2, porcion: 30, u: '1 corto ≈ 30 ml' },
+  { n: 'Café instantáneo (Nescafé) con agua', ml: true, kcal: 2, p: 0.1, c: 0.3, g: 0, porcion: 200, u: '1 taza' },
+  { n: 'Café latte', ml: true, kcal: 54, p: 3.2, c: 4.6, g: 2.6, porcion: 300, u: '1 vaso mediano' },
+  { n: 'Mocaccino', ml: true, kcal: 85, p: 3, c: 11, g: 3.2, porcion: 300, u: '' },
+  { n: 'Café helado / frappé', ml: true, kcal: 95, p: 2, c: 16, g: 2.8, porcion: 350, u: '' },
+  { n: 'Café con leche vegetal', ml: true, kcal: 22, p: 0.4, c: 2.5, g: 1, porcion: 250, u: '' },
+  // Tés e infusiones
+  { n: 'Té negro solo', ml: true, kcal: 1, p: 0, c: 0.3, g: 0, porcion: 250, u: '1 taza' },
+  { n: 'Té verde', ml: true, kcal: 1, p: 0, c: 0, g: 0, porcion: 250, u: '1 taza' },
+  { n: 'Té con leche', ml: true, kcal: 18, p: 0.8, c: 1.4, g: 0.9, porcion: 250, u: '' },
+  { n: 'Té chai latte', ml: true, kcal: 60, p: 2, c: 10, g: 1.5, porcion: 300, u: '' },
+  { n: 'Matcha latte', ml: true, kcal: 55, p: 2.8, c: 7, g: 1.8, porcion: 300, u: '' },
+  { n: 'Manzanilla', ml: true, kcal: 1, p: 0, c: 0.2, g: 0, porcion: 250, u: '1 taza' },
+  { n: 'Menta / hierbabuena', ml: true, kcal: 1, p: 0, c: 0.2, g: 0, porcion: 250, u: '' },
+  { n: 'Boldo', ml: true, kcal: 1, p: 0, c: 0.2, g: 0, porcion: 250, u: '' },
+  { n: 'Cedrón', ml: true, kcal: 1, p: 0, c: 0.2, g: 0, porcion: 250, u: '' },
+  { n: 'Rooibos / té rojo', ml: true, kcal: 1, p: 0, c: 0.2, g: 0, porcion: 250, u: '' },
+  { n: 'Mate (yerba mate)', ml: true, kcal: 2, p: 0.1, c: 0.3, g: 0, porcion: 250, u: '' },
+  { n: 'Té helado embotellado', ml: true, kcal: 30, p: 0, c: 7.5, g: 0, porcion: 500, u: '' },
+  { n: 'Té helado sin azúcar', ml: true, kcal: 1, p: 0, c: 0.2, g: 0, porcion: 500, u: '' },
+  // Jugos
+  { n: 'Jugo de manzana', ml: true, kcal: 46, p: 0.1, c: 11.3, g: 0.1, fb: 0.2, porcion: 250, u: '1 vaso' },
+  { n: 'Jugo de piña', ml: true, kcal: 53, p: 0.4, c: 12.9, g: 0.1, porcion: 250, u: '' },
+  { n: 'Jugo de durazno (néctar)', ml: true, kcal: 54, p: 0.3, c: 13.9, g: 0, porcion: 250, u: '' },
+  { n: 'Jugo light / sin azúcar (caja)', ml: true, kcal: 10, p: 0, c: 2.3, g: 0, porcion: 250, u: '' },
+  { n: 'Limonada natural con azúcar', ml: true, kcal: 40, p: 0.1, c: 10.4, g: 0, porcion: 300, u: '' },
+  { n: 'Limonada sin azúcar', ml: true, kcal: 6, p: 0.1, c: 1.7, g: 0, porcion: 300, u: '' },
+  { n: 'Jugo de zanahoria', ml: true, kcal: 40, p: 0.9, c: 9.3, g: 0.2, fb: 0.8, porcion: 250, u: '' },
+  { n: 'Jugo verde (apio, pepino, manzana)', ml: true, kcal: 30, p: 0.8, c: 6.5, g: 0.2, fb: 0.6, porcion: 300, u: '' },
+  { n: 'Jugo de tomate', ml: true, kcal: 17, p: 0.9, c: 3.5, g: 0.1, fb: 0.4, porcion: 250, u: '' },
+  { n: 'Jugo de frutilla o frambuesa natural', ml: true, kcal: 35, p: 0.4, c: 8, g: 0.2, fb: 0.8, porcion: 250, u: '' },
+  // Otras bebidas
+  { n: 'Agua con gas / mineral', ml: true, kcal: 0, p: 0, c: 0, g: 0, porcion: 500, u: '1 botella' },
+  { n: 'Agua de coco', ml: true, kcal: 19, p: 0.7, c: 3.7, g: 0.2, porcion: 330, u: '' },
+  { n: 'Kombucha', ml: true, kcal: 15, p: 0, c: 3.5, g: 0, porcion: 330, u: '' },
+  { n: 'Kéfir de leche', ml: true, kcal: 55, p: 3.5, c: 4.5, g: 2.5, porcion: 200, u: '' },
+  { n: 'Leche de soya', ml: true, kcal: 43, p: 3.3, c: 2.5, g: 1.8, porcion: 200, u: '' },
+  { n: 'Leche de coco (bebida)', ml: true, kcal: 20, p: 0.2, c: 2.7, g: 1, porcion: 200, u: '' },
+  { n: 'Agua tónica', ml: true, kcal: 34, p: 0, c: 8.8, g: 0, porcion: 350, u: '' },
+  { n: 'Ginger ale', ml: true, kcal: 34, p: 0, c: 8.8, g: 0, porcion: 350, u: '' },
+  { n: 'Caldo / consomé', ml: true, kcal: 7, p: 0.6, c: 0.5, g: 0.3, porcion: 250, u: '1 taza' },
+  // Suplementos
+  { n: 'Multivitamínico', kcal: 0, p: 0, c: 0, g: 0, porcion: 1, u: '1 cápsula o tableta' },
+  { n: 'Omega 3 (cápsula)', kcal: 900, p: 0, c: 0, g: 100, porcion: 1, u: '1 cápsula ≈ 1 g' },
+  { n: 'Vitamina D', kcal: 0, p: 0, c: 0, g: 0, porcion: 1, u: '1 cápsula' },
+  { n: 'Vitamina C (efervescente)', kcal: 50, p: 0, c: 12, g: 0, porcion: 4, u: '1 tableta ≈ 4 g' },
+  { n: 'Magnesio', kcal: 0, p: 0, c: 0, g: 0, porcion: 1, u: '' },
+  { n: 'Colágeno hidrolizado', kcal: 360, p: 90, c: 0, g: 0, porcion: 10, u: '1 medida ≈ 10 g' },
+  { n: 'Electrolitos (sobre)', kcal: 40, p: 0, c: 10, g: 0, porcion: 10, u: '1 sobre' },
+  { n: 'Fibra (psyllium)', kcal: 200, p: 1.5, c: 85, g: 0.5, fb: 80, porcion: 5, u: '1 cucharadita' },
+);
+
+// Para endulzar y agregar a los líquidos, y aceites y grasas (agregados el 11-11-2026)
+// Los aceites llevan además grasas saturadas (sat), monoinsaturadas (mono) y poliinsaturadas (poli) por 100 g.
+window.FOODS.push(
+  // Endulzantes y agregados
+  { n: 'Azúcar rubia / morena', kcal: 380, p: 0.1, c: 98, g: 0, porcion: 5, u: '1 cucharadita ≈ 5 g' },
+  { n: 'Chancaca', kcal: 350, p: 0.4, c: 90, g: 0.1, porcion: 20, u: '' },
+  { n: 'Stevia líquida (gotas)', kcal: 0, p: 0, c: 0, g: 0, porcion: 1, u: '5 gotas' },
+  { n: 'Stevia en polvo (sobre)', kcal: 380, p: 0, c: 95, g: 0, porcion: 1, u: '1 sobre ≈ 1 g (≈ 4 kcal)' },
+  { n: 'Sucralosa líquida', kcal: 0, p: 0, c: 0, g: 0, porcion: 1, u: '' },
+  { n: 'Sacarina', kcal: 0, p: 0, c: 0, g: 0, porcion: 1, u: '' },
+  { n: 'Eritritol', kcal: 20, p: 0, c: 5, g: 0, porcion: 5, u: '1 cucharadita' },
+  { n: 'Jarabe de agave', kcal: 310, p: 0, c: 76, g: 0, porcion: 7, u: '1 cucharadita ≈ 7 g' },
+  { n: 'Leche condensada', kcal: 321, p: 7.9, c: 54, g: 8.7, sat: 5.5, porcion: 20, u: '1 cucharada ≈ 20 g' },
+  { n: 'Leche en polvo entera', kcal: 496, p: 26, c: 38, g: 27, sat: 17, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Leche en polvo descremada', kcal: 362, p: 36, c: 52, g: 0.8, porcion: 10, u: '' },
+  { n: 'Sustituto de crema para café (polvo)', kcal: 547, p: 2, c: 55, g: 35, sat: 32, porcion: 5, u: '1 cucharadita ≈ 5 g' },
+  { n: 'Cacao amargo en polvo', kcal: 228, p: 20, c: 58, g: 14, fb: 33, porcion: 5, u: '1 cucharadita' },
+  { n: 'Cacao azucarado (tipo Milo / Nesquik)', kcal: 380, p: 4, c: 85, g: 3, fb: 4, porcion: 15, u: '1 cucharada ≈ 15 g' },
+  { n: 'Sal', kcal: 0, p: 0, c: 0, g: 0, sod: 38758, porcion: 1, u: '1 pizca ≈ 1 g' },
+  // Aceites y grasas
+  { n: 'Aceite de maravilla', kcal: 884, p: 0, c: 0, g: 100, sat: 10.3, mono: 19.5, poli: 65.7, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite de maravilla alto oleico', kcal: 884, p: 0, c: 0, g: 100, sat: 9.7, mono: 83.6, poli: 3.8, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite de canola', kcal: 884, p: 0, c: 0, g: 100, sat: 7.4, mono: 63.3, poli: 28.1, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite de maíz', kcal: 884, p: 0, c: 0, g: 100, sat: 13, mono: 27.6, poli: 54.7, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite de soya', kcal: 884, p: 0, c: 0, g: 100, sat: 15.6, mono: 22.8, poli: 57.7, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite de coco', kcal: 862, p: 0, c: 0, g: 100, sat: 82.5, mono: 6.3, poli: 1.7, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite de pepita de uva', kcal: 884, p: 0, c: 0, g: 100, sat: 9.6, mono: 16.1, poli: 69.9, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite de palta', kcal: 884, p: 0, c: 0, g: 100, sat: 11.6, mono: 70.6, poli: 13.5, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite de sésamo', kcal: 884, p: 0, c: 0, g: 100, sat: 14.2, mono: 39.7, poli: 41.7, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite de linaza', kcal: 884, p: 0, c: 0, g: 100, sat: 9, mono: 18, poli: 68, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Aceite en spray', kcal: 884, p: 0, c: 0, g: 100, porcion: 1, u: '3 disparos ≈ 1 g' },
+  { n: 'Manteca de cerdo', kcal: 902, p: 0, c: 0, g: 100, sat: 39, mono: 45, poli: 11, col: 95, porcion: 10, u: '1 cucharada ≈ 10 g' },
+  { n: 'Ghee / mantequilla clarificada', kcal: 900, p: 0.3, c: 0, g: 99.5, sat: 62, mono: 29, poli: 4, col: 256, porcion: 5, u: '1 cucharadita ≈ 5 g' },
+  { n: 'Mayonesa light', kcal: 300, p: 1, c: 8, g: 30, porcion: 15, u: '1 cucharada ≈ 15 g' },
+);
+// Datos de grasas que faltaban en alimentos de la base
+for (const f of window.FOODS) {
+  if (f.n === 'Aceite de oliva') Object.assign(f, { sat: 13.8, mono: 73, poli: 10.5 });
+  if (f.n === 'Aceite vegetal') Object.assign(f, { sat: 11, mono: 35, poli: 50 });
+  if (f.n === 'Mantequilla') Object.assign(f, { sat: 51, mono: 21, poli: 3, col: 215 });
+  if (f.n === 'Azúcar') f.u = '1 cucharadita ≈ 5 g';
+  if (f.n === 'Miel') f.u = '1 cucharadita ≈ 7 g';
+}

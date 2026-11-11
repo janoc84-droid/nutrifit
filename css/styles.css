@@ -682,3 +682,18 @@ body.has-nav .timer { bottom: calc(74px + env(safe-area-inset-bottom)); }
 .mf-lbl input, .mf-lbl select, .mf-qty select { width: 100%; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--bg); font-size: 15px; color: var(--ink); font-family: inherit; }
 .mf-qty select { width: 4.5em; padding: 10px 6px; }
 .mf-custom .mf-lbl input { margin-top: 0; }
+
+/* Líquidos del día */
+.liq-card h3 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.bar.liq i { background: linear-gradient(90deg, #4FA3E0, #2E7FD0); }
+.liq-btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; }
+.liq-btns .btn { flex: 1 1 auto; }
+
+/* Agregados (azúcar, leche, aceite…) */
+.agregados { margin-top: 6px; }
+.ag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ag-chip { border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 7px 11px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.ag-chip small { color: var(--ink-2); font-weight: 500; }
+.ag-chip b { margin-left: 4px; color: var(--accent); }
+.ag-chip.on { border-color: var(--accent); background: var(--accent-soft); }
+.ag-chip.reset { color: var(--ink-2); }
