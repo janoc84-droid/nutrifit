@@ -1909,7 +1909,8 @@
         <button class="btn ghost" id="exportone">Exportar este plan</button>
         <button class="btn danger" id="del">Eliminar este plan</button>
       </div>
-      <p class="muted small center">Creado el ${fmtDate(p.createdAt)}</p>`;
+      <p class="muted small center">Creado el ${fmtDate(p.createdAt)}</p>
+      <p class="muted small center app-version">Nutrifit v${esc(window.APP_VERSION || '')}</p>`;
   }
 
   function bindPlanTab(p, tab) {

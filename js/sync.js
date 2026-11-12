@@ -23,13 +23,24 @@
   const clave = () => ls.get(K_CLAVE) || NUBE.clave || '';
   const conectado = () => !!(url() && clave());
 
-  // El código puede llegar en el link: …/nutrifit/#clave=XXXX-XXXX-XXXX
+  // El código puede llegar en el link: …/nutrifit/?clave=XXXXXXXXXXXX (o #clave=…, el del código QR)
   (function leerLink() {
-    const m = /[#&?]clave=([A-Za-z0-9-]+)/.exec(location.hash + location.search);
-    if (!m) return;
-    ls.set(K_CLAVE, bonita(m[1]));
-    try { history.replaceState(null, '', location.pathname); } catch (e) { /* */ }
+    const m = /[#&?]clave=([A-Za-z0-9-]+)/.exec(location.search + location.hash);
+    if (m) ls.set(K_CLAVE, bonita(m[1]));
   })();
+  // Mientras se usa en el navegador, la dirección conserva el código. Así, al tocar "Agregar a pantalla de inicio"
+  // (iPhone) o "Instalar" (Android), el ícono queda guardado con el código y abre ya conectado: en el iPhone el ícono
+  // tiene su propia memoria, separada de Safari, y sin esto partía desconectado.
+  const standalone = () => !!(window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
+  function fijarEnDireccion() {
+    try {
+      const k = normal(clave());
+      const hash = location.hash.replace(/[#&]?clave=[A-Za-z0-9-]+/, '');
+      const query = native || !k || !url() ? '' : '?clave=' + k;
+      if (location.search !== query || hash !== location.hash) history.replaceState(null, '', location.pathname + query + hash);
+    } catch (e) { /* */ }
+  }
+  fijarEnDireccion();
 
   async function llamar(op, extra = {}, ms = 30000, k = clave()) {
     const ctrl = new AbortController();
@@ -110,10 +121,11 @@
     await llamar('leer', { rev: -2 }, 30000, k);
     ls.set(K_CLAVE, k);
     ls.del(K_REV);
+    fijarEnDireccion();
     await sync();
     return true;
   }
-  function disconnect() { ls.del(K_CLAVE); ls.del(K_REV); state.status = 'sinclave'; emit(); }
+  function disconnect() { ls.del(K_CLAVE); ls.del(K_REV); fijarEnDireccion(); state.status = 'sinclave'; emit(); }
 
   // ---------- Fotos de platos ----------
   // La foto se guarda en el aparato hasta que llega a la nube; el PC la revisa con Claude cuando está encendido.
@@ -152,7 +164,7 @@
   setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 30000);
 
   window.Sync = {
-    sync, connect, disconnect, state, native, conectado, clave: () => bonita(clave()), configurada: () => !!url(),
+    sync, connect, disconnect, state, native, conectado, standalone, clave: () => bonita(clave()), configurada: () => !!url(),
     encolarFoto, fotosSinSubir, pcEncendido, vigilar,
     // IA en la nube (Gemini, desde tu Google Drive): tipo 'plato' | 'etiqueta' | 'texto'
     ia: (tipo, extra) => llamar('ia', { tipo, ...extra }, 120000),

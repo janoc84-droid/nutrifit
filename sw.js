@@ -1,9 +1,9 @@
 // Service worker: guarda la app en caché para que funcione sin conexión.
 // Sube la versión cada vez que cambies archivos para que los dispositivos descarguen la nueva.
-const VERSION = 'calistenia-v29';
+const VERSION = 'nutrifit-1.30.0';
 const FILES = [
   './', './index.html', './manifest.webmanifest', './css/styles.css',
-  './js/config.js', './js/quiz-data.js', './js/exercises.js', './js/planner.js', './js/foods.js', './js/foods-mas.js', './js/alimentos-chile.json', './js/anim.js', './js/nube.js', './js/merge.js', './js/store.js', './js/sync.js', './js/ia.js', './js/app.js', './js/anim3d.js',
+  './js/version.js', './js/config.js', './js/quiz-data.js', './js/exercises.js', './js/planner.js', './js/foods.js', './js/foods-mas.js', './js/alimentos-chile.json', './js/anim.js', './js/nube.js', './js/merge.js', './js/store.js', './js/sync.js', './js/ia.js', './js/app.js', './js/anim3d.js',
   './js/vendor/three/three.module.min.js', './js/vendor/three/addons/loaders/GLTFLoader.js',
   './js/vendor/three/addons/utils/BufferGeometryUtils.js', './js/vendor/three/addons/utils/SkeletonUtils.js', './models/Hombre_Claro.glb', './models/Hombre_Moreno.glb',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png',
@@ -31,6 +31,6 @@ self.addEventListener('fetch', (e) => {
         caches.open(VERSION).then((c) => c.put(e.request, copy));
         return res;
       })
-      .catch(() => caches.match(e.request).then((r) => r || caches.match('./index.html')))
+      .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('./index.html')))
   );
 });
