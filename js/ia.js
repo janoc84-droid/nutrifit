@@ -125,7 +125,7 @@
   async function iaConfig(forzar) {
     try { const c = JSON.parse(localStorage.getItem(K_CFG) || 'null'); if (c && !forzar && Date.now() - c.t < 6 * 3600000) return c; } catch (e) { /* */ }
     const r = await window.Sync.iaConfig();
-    const c = { gemini: r.gemini || '', claude: !!r.claude, t: Date.now() };
+    const c = { gemini: r.gemini || '', groq: r.groq || '', openrouter: r.openrouter || '', claude: !!r.claude, t: Date.now() };
     try { localStorage.setItem(K_CFG, JSON.stringify(c)); } catch (e) { /* */ }
     return c;
   }
@@ -198,20 +198,107 @@
     return { resultado: JSON.parse(t.slice(a, b + 1)), proveedor: 'gemini', modelo: usado.replace('models/', '') };
   }
 
-  // Orden: Gemini directo → Claude en la nube (si hay clave de Anthropic). Si los dos fallan, se avisa con el motivo de Gemini.
+
+  // ---------- Otros modelos gratis en internet (Groq y OpenRouter, mismo formato que OpenAI) ----------
+  // Probados el 12-11-2026 con la etiqueta de ejemplo: Qwen 3.8 en Groq 1,6 s; Nemotron 3.5 VL en OpenRouter 20 s;
+  // Dots 3 33 s; Gemma 4 estaba ocupado. La lista de OpenRouter se renueva sola cada día con los gratis que leen fotos.
+  const PROVEEDORES = {
+    groq: {
+      nombre: 'Qwen (Groq)', url: 'https://api.groq.com/openai/v1/chat/completions', espera: 20000, formato: 'json_object',
+      foto: ['qwen/qwen3.8-27b'], texto: ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b'],
+    },
+    openrouter: {
+      nombre: 'OpenRouter (gratis)', url: 'https://openrouter.ai/api/v1/chat/completions', espera: 45000, formato: 'json_schema',
+      foto: ['nvidia/nemotron-3.5-super-vl:free', 'google/gemma-4-31b-it:free', 'google/gemma-4-26b-a4b-it:free', 'dots-studio/dots-3-note-preview:free'],
+      texto: ['nvidia/nemotron-3.5-super-vl:free', 'google/gemma-4-31b-it:free', 'openrouter/free'],
+    },
+  };
+  const K_OR = 'nutrifit.iaOpenRouter';
+  // Modelos gratis de OpenRouter que leen fotos, en el orden preferido; si aparecen nuevos, se agregan al final.
+  async function modelosOpenRouter() {
+    const pref = PROVEEDORES.openrouter.foto;
+    try { const m = JSON.parse(localStorage.getItem(K_OR) || 'null'); if (m && Date.now() - m.t < 24 * 3600000 && m.lista.length) return m.lista; } catch (e) { /* */ }
+    try {
+      const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 10000);
+      const j = await (await fetch('https://openrouter.ai/api/v1/models', { signal: ctrl.signal })).json(); clearTimeout(to);
+      const libres = (j.data || []).filter((x) => /:free$/.test(x.id) && (x.architecture?.input_modalities || []).includes('image') && !/lyria|inkling|audio/i.test(x.id)).map((x) => x.id);
+      const lista = [...pref.filter((x) => libres.includes(x)), ...libres.filter((x) => !pref.includes(x))].slice(0, 5);
+      if (lista.length) { try { localStorage.setItem(K_OR, JSON.stringify({ t: Date.now(), lista })); } catch (e) { /* */ } return lista; }
+    } catch (e) { /* sin lista nueva: se usan los conocidos */ }
+    return pref;
+  }
+
+  async function compatible(prov, key, modelo, tipo, b64, texto, cono, ms) {
+    const P = PROVEEDORES[prov];
+    const sys = D.instrucciones[tipo] + (cono ? '\nAlimentos que ya están en la base de la app. Si uno es el mismo, usa EXACTAMENTE ese nombre; si no está, usa un nombre común y claro:\n' + cono : '');
+    const user = b64 ? [{ type: 'text', text: texto }, { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + b64 } }] : texto;
+    const body = {
+      model: modelo, temperature: 0.2, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
+      response_format: P.formato === 'json_schema' ? { type: 'json_schema', json_schema: { name: tipo, strict: true, schema: D.aClaude(D.esquemas[tipo]) } } : { type: 'json_object' },
+    };
+    const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), ms);
+    let r;
+    try {
+      r = await fetch(P.url, { method: 'POST', signal: ctrl.signal, body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key, ...(prov === 'openrouter' ? { 'HTTP-Referer': 'https://janoc84-droid.github.io/nutrifit/', 'X-Title': 'Nutrifit' } : {}) } });
+    } catch (e) {
+      if (e.name === 'AbortError') throw err(P.nombre + ' tardó demasiado', undefined, 504);
+      throw err('Sin internet', 'red');
+    } finally { clearTimeout(to); }
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401 || r.status === 403) throw err('La clave de ' + P.nombre + ' no sirve', 'clave_mala', r.status);
+    if (!r.ok || j.error) throw err(P.nombre + ' respondió con un error (' + (r.status || j.error?.code) + ')', undefined, r.ok ? (j.error?.code || 500) : r.status);
+    const t = String(j.choices?.[0]?.message?.content || '').replace(/<think>[\s\S]*?<\/think>/g, '');
+    const a = t.indexOf('{'), b = t.lastIndexOf('}');
+    if (a < 0 || b <= a) throw err('La respuesta no se pudo leer', undefined, 500);
+    return JSON.parse(t.slice(a, b + 1));
+  }
+
+  // Todos los modelos de un proveedor, uno tras otro, sin pasar de su tope de tiempo.
+  async function probarProveedor(prov, key, job, texto, cono, tope, aviso) {
+    const P = PROVEEDORES[prov];
+    const modelos = job.b64 ? (prov === 'openrouter' ? await modelosOpenRouter() : P.foto) : P.texto;
+    const fin = Date.now() + tope;
+    let limite = false;
+    for (const m of modelos) {
+      if (fin - Date.now() < 3000) break;
+      aviso(P.nombre);
+      try { return { resultado: await compatible(prov, key, m, job.tipo, job.b64, texto, cono, Math.min(P.espera, fin - Date.now())), proveedor: prov, modelo: m }; }
+      catch (e) { if (e.codigo === 'red') throw e; if (e.codigo === 'clave_mala') break; if (e.status === 429) limite = true; }
+    }
+    throw err(P.nombre + ' no respondió', limite ? 'limite' : 'saturado');
+  }
+
+  // Cadena de modelos GRATIS, todos por internet (funcionan desde el teléfono con el PC apagado):
+  //   1) Gemini directo  2) Qwen en Groq  3) OpenRouter gratis (Nemotron, Gemma 4, Dots…).
+  // Claude de pago NUNCA se usa solo: solo si la persona lo pide para ese pedido (job.pago).
+  // Si nada responde, siguen los reintentos y, al final, el PC (Claude con la suscripción).
   async function consultarIA(job, texto) {
     const cono = job.tipo === 'etiqueta' ? '' : conocidos();
     const cfg = await iaConfig();
-    let errG = err('La IA de la nube no tiene clave de Gemini', 'sin_ia');
+    const aviso = (quien) => { if (job.probando !== quien) { job.probando = quien; actualizar(job); window.dispatchEvent(new CustomEvent('ia-espera', { detail: { id: job.id } })); } };
+    if (job.pago) {
+      if (!cfg.claude) throw err('No hay clave de Claude de pago', 'sin_ia');
+      aviso('Claude (pago)');
+      const r = await window.Sync.ia(job.tipo, { b64: job.b64, texto, conocidos: cono, proveedor: 'claude' });
+      return { resultado: r.resultado, proveedor: 'claude', modelo: r.modelo };
+    }
+    let ultimo = err('No hay modelos de IA configurados', 'sin_ia'), alguno = false;
     if (cfg.gemini) {
+      alguno = true; aviso('Gemini');
       try { return await geminiDirecto(cfg.gemini, job.tipo, job.b64, texto, cono); }
-      catch (e) { if (e.codigo === 'red') throw e; if (e.codigo === 'clave_gemini') iaConfig(true).catch(() => {}); errG = e; }
+      catch (e) { if (e.codigo === 'red') throw e; if (e.codigo === 'clave_gemini') iaConfig(true).catch(() => {}); else ultimo = e; }
     }
-    if (cfg.claude) {
-      try { const r = await window.Sync.ia(job.tipo, { b64: job.b64, texto, conocidos: cono, proveedor: 'claude' }); return { resultado: r.resultado, proveedor: 'claude', modelo: r.modelo }; }
-      catch (e) { if (e.codigo === 'red') throw e; }
+    for (const [prov, tope] of [['groq', 40000], ['openrouter', 90000]]) {
+      if (!cfg[prov]) continue;
+      alguno = true;
+      try { return await probarProveedor(prov, cfg[prov], job, texto, cono, tope, aviso); }
+      catch (e) { if (e.codigo === 'red') throw e; if (ultimo.codigo !== 'saturado') ultimo = e; }
     }
-    throw errG.codigo === 'clave_gemini' ? err(errG.message, 'sin_ia') : errG;
+    if (!alguno) throw ultimo;
+    // Nada gratis respondió: si hay Claude de pago, se ofrece (no se usa sin permiso)
+    if (cfg.claude) ultimo.puedePagar = true;
+    throw ultimo.codigo === 'clave_gemini' ? err(ultimo.message, 'saturado') : ultimo;
   }
 
   // Si la IA de la nube no puede, el pedido pasa a Claude en el PC (como antes).
@@ -232,6 +319,7 @@
         : job.tipo === 'etiqueta' ? `Producto: ${job.meta.nombre || '(sin nombre)'}\nCuánto comí: ${job.meta.cant || 'nada todavía, solo quiero guardar el producto'}`
         : 'Analiza esta comida.';
       const r = await consultarIA(job, texto);
+      job.probando = '';
       job.proveedor = r.proveedor;
       const out = aplicar(job, r.resultado || {});
       quitar(job.id);
@@ -240,16 +328,18 @@
     } catch (e) {
       if (e.codigo === 'red' || e.clave) return; // sin internet: se reintenta después
       job.fallos = (job.fallos || 0) + 1;
-      // Gemini saturado (algo pasajero): se reintenta cada minuto; si sigue así unos 8 minutos, pasa a Claude en el PC
-      if ((e.codigo === 'saturado' || e.codigo === 'ia') && job.fallos < 8) {
-        job.motivo = (e.codigo === 'saturado' ? 'Gemini está con mucha demanda' : 'La IA no respondió') + '; se reintenta solo en un minuto';
+      job.puedePagar = !!e.puedePagar;
+      job.probando = '';
+      // Modelos gratis ocupados (algo pasajero): se reintenta cada minuto; si sigue así unos 8 minutos, pasa al PC
+      if ((e.codigo === 'saturado' || e.codigo === 'ia' || e.codigo === 'limite') && job.fallos < 8 && !job.pago) {
+        job.motivo = 'Los modelos gratis están ocupados; se reintenta solo en un minuto';
         actualizar(job);
         setTimeout(procesar, 60000);
         window.dispatchEvent(new CustomEvent('ia-espera', { detail: { id: job.id } }));
         return;
       }
       // Sin clave de Gemini, límite gratis alcanzado o errores repetidos → Claude en el PC
-      if (e.codigo === 'sin_ia' || e.codigo === 'limite' || job.fallos >= 8) {
+      if (e.codigo === 'sin_ia' || job.fallos >= 8 || job.pago) {
         alPC(job);
         quitar(job.id);
         window.dispatchEvent(new CustomEvent('ia-lista', { detail: { id: job.id, tipo: job.tipo, alPC: true, motivo: e.message } }));
@@ -282,7 +372,10 @@
 
   window.IA = {
     pedir, procesar, enCola: (id) => cola().some((j) => j.id === id), trabajando: (id) => trabajando.has(id), iaConfig, geminiDirecto,
-    motivo: (id) => (cola().find((j) => j.id === id) || {}).motivo || '',
+    motivo: (id) => { const j = cola().find((x) => x.id === id) || {}; return j.probando && trabajando.has(id) ? 'Probando con ' + j.probando + '…' : j.motivo || ''; },
+    puedePagar: (id) => !!(cola().find((x) => x.id === id) || {}).puedePagar,
+    // Solo con permiso explícito: usar Claude de pago para este pedido
+    usarPago: (id) => { const c = cola(); const j = c.find((x) => x.id === id); if (!j) return; j.pago = true; j.motivo = ''; guardar(c); procesar(); },
   };
   // Se reintenta al volver internet, al volver a la app y cada vez que se sincroniza
   window.addEventListener('online', () => procesar());

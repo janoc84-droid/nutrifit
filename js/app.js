@@ -460,8 +460,13 @@
       const txt = modal.querySelector('#fwtxt');
       if (!txt) return;
       const st = Sync.state;
+      const pagoBtn = modal.querySelector('#fpago');
+      if (IA.puedePagar(id) && !pagoBtn) {
+        modal.querySelector('.food-wait').insertAdjacentHTML('afterend', '<button class="btn ghost wide" id="fpago">💳 Usar Claude de pago para esta foto</button>');
+        modal.querySelector('#fpago').onclick = () => { IA.usarPago(id); modal.querySelector('#fpago').remove(); };
+      }
       txt.innerHTML = IA.enCola(id)
-        ? (IA.trabajando(id) ? '<strong>La IA está mirando tu plato…</strong><br><span class="muted small">Unos segundos.</span>'
+        ? (IA.trabajando(id) ? `<strong>La IA está mirando tu plato…</strong><br><span class="muted small">${esc(IA.motivo(id) || 'Unos segundos.')}</span>`
           : IA.motivo(id) ? `<strong>Un momento…</strong><br><span class="muted small">${esc(IA.motivo(id))}.</span>`
           : '<strong>Sin internet en este momento.</strong><br><span class="muted small">La foto quedó guardada aquí y se revisa sola cuando vuelva la conexión.</span>')
         : Sync.fotosSinSubir()
