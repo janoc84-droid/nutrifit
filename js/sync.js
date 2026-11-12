@@ -168,6 +168,7 @@
     encolarFoto, fotosSinSubir, pcEncendido, vigilar,
     // IA en la nube (Gemini, desde tu Google Drive): tipo 'plato' | 'etiqueta' | 'texto'
     ia: (tipo, extra) => llamar('ia', { tipo, ...extra }, 120000),
+    iaConfig: () => llamar('ia_config', {}, 30000),
     onStatus: (fn) => subs.push(fn),
   };
   sync();

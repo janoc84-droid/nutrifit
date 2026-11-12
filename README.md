@@ -1,6 +1,6 @@
 # Nutrifit (web)
 
-Versión publicada: **nutrifit-1.30.0**. Abrir: https://janoc84-droid.github.io/nutrifit/
+Versión publicada: **nutrifit-1.31.0**. Abrir: https://janoc84-droid.github.io/nutrifit/
 
 Este repositorio solo contiene la aplicación. Los datos de cada persona se guardan en su aparato y en su
 propia nube (Google Drive), protegidos con un código de conexión que no está aquí.

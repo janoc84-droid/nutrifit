@@ -50,7 +50,7 @@
         id: `${job.id}-${i}`, at: base.at + i, t: ahora, meal: base.meal, src, foto: job.id,
         name: x.nombre, gr: x.gramos || null, ml: x.ml || null, kcal: x.kcal, p: x.proteina, c: x.carbohidratos, g: x.grasa, fb: x.fibra || 0, ...(x.extra || {}),
       }));
-      poner({ ...base, pend: false, hecho: true, deleted: true, t: ahora, plato: res.plato || '', confianza: res.confianza || 'media', nota: res.nota || '', total: res.total_kcal, ia: 'gemini' });
+      poner({ ...base, pend: false, hecho: true, deleted: true, t: ahora, plato: res.plato || '', confianza: res.confianza || 'media', nota: res.nota || '', total: res.total_kcal, ia: job.proveedor === 'claude' ? 'claude-nube' : 'gemini' });
     }, false);
     if (quedo !== 'ok') return quedo;
     // Alimentos que no estaban en la base (por 100 g o 100 ml)
@@ -109,6 +109,111 @@
     return { ok: true, quedo: anotar(job, normalizar(r), job.tipo === 'plato' ? 'foto' : 'claude') };
   }
 
+
+  // ---------- Gemini directo desde la app (mismo método que Mezcla DJ) ----------
+  // La clave gratis de Gemini la entrega la nube (solo a aparatos conectados con tu código).
+  // Se prueban modelos ya probados, cada uno con 25 s como máximo, pidiendo "pensar poco" y con la respuesta en un
+  // formato fijo. Si ninguno responde, sigue Claude en la nube (si hay clave de Anthropic) y al final Claude en el PC.
+  const D = window.IA_DEF;
+  const GBASE = 'https://generativelanguage.googleapis.com';
+  const GEMINI_PREF = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+  const GEMINI_ESPERA = 25000; // por modelo. Medido el 11-11-2026: 3.5-flash responde en 1-4 s; 3.8-flash no respondía
+  const GEMINI_TOPE = 40000;   // en total: si Gemini está saturado, no se hace esperar más y pasa al respaldo (Claude)
+  const K_CFG = 'nutrifit.iaCfg', K_MOD = 'nutrifit.iaModelos';
+  const err = (m, codigo, status) => Object.assign(new Error(m), { codigo, status });
+
+  async function iaConfig(forzar) {
+    try { const c = JSON.parse(localStorage.getItem(K_CFG) || 'null'); if (c && !forzar && Date.now() - c.t < 6 * 3600000) return c; } catch (e) { /* */ }
+    const r = await window.Sync.iaConfig();
+    const c = { gemini: r.gemini || '', claude: !!r.claude, t: Date.now() };
+    try { localStorage.setItem(K_CFG, JSON.stringify(c)); } catch (e) { /* */ }
+    return c;
+  }
+
+  async function gFetch(key, url, body, ms = GEMINI_ESPERA) {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), ms);
+    let r;
+    try {
+      r = await fetch(GBASE + url, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: body ? JSON.stringify(body) : undefined, signal: ctrl.signal });
+    } catch (e) {
+      if (e.name === 'AbortError') throw err('Gemini tardó demasiado en responder', undefined, 504); // se prueba otro modelo
+      throw err('Sin internet', 'red');
+    } finally { clearTimeout(to); }
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) return d;
+    const msg = (d.error && d.error.message) || '';
+    if ((r.status === 400 && /api key/i.test(msg)) || r.status === 403) throw err('La clave de Gemini no sirve', 'clave_gemini', r.status);
+    throw err('Google respondió con un error (' + r.status + ')', undefined, r.status); // 429, 5xx o 404: otro modelo
+  }
+
+  async function modelosGemini(key) {
+    try { const m = JSON.parse(localStorage.getItem(K_MOD) || 'null'); if (m && Date.now() - m.t < 12 * 3600000 && m.lista.length) return m.lista; } catch (e) { /* */ }
+    let lista = GEMINI_PREF.map((n) => 'models/' + n);
+    try {
+      const { models = [] } = await gFetch(key, '/v1beta/models?pageSize=200');
+      const hay = new Set(models.filter((x) => (x.supportedGenerationMethods || []).includes('generateContent')).map((x) => x.name));
+      const pref = lista.filter((n) => hay.has(n));
+      const otros = [...hay].filter((n) => /gemini-([\d.]+-)?flash/.test(n) && !/image|tts|audio|live|preview|exp/.test(n));
+      lista = (pref.length ? pref : otros).slice(0, 4);
+    } catch (e) { if (e.codigo) throw e; lista = lista.slice(0, 4); }
+    try { localStorage.setItem(K_MOD, JSON.stringify({ t: Date.now(), lista })); } catch (e) { /* */ }
+    return lista;
+  }
+
+  async function geminiDirecto(key, tipo, b64, texto, cono) {
+    const instr = D.instrucciones[tipo] + (cono ? '\nAlimentos que ya están en la base de la app. Si uno es el mismo, usa EXACTAMENTE ese nombre; si no está, usa un nombre común y claro:\n' + cono : '');
+    const parts = [];
+    if (b64) parts.push({ inline_data: { mime_type: 'image/jpeg', data: b64 } });
+    parts.push({ text: texto });
+    const pedido = { systemInstruction: { parts: [{ text: instr }] }, contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', responseSchema: D.aGemini(D.esquemas[tipo]), temperature: 0.2 } };
+    const modelos = await modelosGemini(key);
+    let limite = false, ocupado = false, data = null, usado = '';
+    const fin = Date.now() + GEMINI_TOPE;
+    // Dos vueltas por la lista (antes de la segunda, una pausa por si era un momento de mucha demanda), sin pasar del tope.
+    for (let n = 0; n < modelos.length * 2 && !data; n++) {
+      if (fin - Date.now() < 3000) { ocupado = true; break; }
+      if (n === modelos.length) await new Promise((ok) => setTimeout(ok, 2000));
+      const m = modelos[n % modelos.length];
+      const cuerpo = { ...pedido, generationConfig: { ...pedido.generationConfig, ...(/gemini-3/.test(m) ? { thinkingConfig: { thinkingLevel: 'low' } } : {}) } };
+      try { data = await gFetch(key, '/v1beta/' + m + ':generateContent', cuerpo, Math.min(GEMINI_ESPERA, fin - Date.now())); usado = m; }
+      catch (e) {
+        if (e.codigo) throw e;
+        if (e.status === 429) limite = true; else if (e.status >= 500) ocupado = true; else if (e.status !== 404) throw err(e.message, 'ia');
+      }
+    }
+    if (!data) {
+      try { localStorage.removeItem(K_MOD); } catch (e) { /* */ } // la próxima vez se vuelve a mirar qué modelos hay
+      if (ocupado) throw err('Gemini está con mucha demanda', 'saturado');
+      if (limite) throw err('Se alcanzó el límite gratis de Gemini por ahora', 'limite');
+      throw err('Ningún modelo de Gemini respondió', 'ia');
+    }
+    if (data.promptFeedback && data.promptFeedback.blockReason) throw err('Gemini no quiso responder esta consulta', 'ia');
+    const c = (data.candidates || [])[0];
+    if (!c) throw err('Gemini no devolvió respuesta', 'ia');
+    if (c.finishReason === 'MAX_TOKENS') throw err('La respuesta de Gemini quedó cortada', 'ia');
+    const t = ((c.content && c.content.parts) || []).map((x) => x.text || '').join('');
+    const a = t.indexOf('{'), b = t.lastIndexOf('}');
+    if (a < 0 || b <= a) throw err('La respuesta de Gemini no se pudo leer', 'ia');
+    return { resultado: JSON.parse(t.slice(a, b + 1)), proveedor: 'gemini', modelo: usado.replace('models/', '') };
+  }
+
+  // Orden: Gemini directo → Claude en la nube (si hay clave de Anthropic). Si los dos fallan, se avisa con el motivo de Gemini.
+  async function consultarIA(job, texto) {
+    const cono = job.tipo === 'etiqueta' ? '' : conocidos();
+    const cfg = await iaConfig();
+    let errG = err('La IA de la nube no tiene clave de Gemini', 'sin_ia');
+    if (cfg.gemini) {
+      try { return await geminiDirecto(cfg.gemini, job.tipo, job.b64, texto, cono); }
+      catch (e) { if (e.codigo === 'red') throw e; if (e.codigo === 'clave_gemini') iaConfig(true).catch(() => {}); errG = e; }
+    }
+    if (cfg.claude) {
+      try { const r = await window.Sync.ia(job.tipo, { b64: job.b64, texto, conocidos: cono, proveedor: 'claude' }); return { resultado: r.resultado, proveedor: 'claude', modelo: r.modelo }; }
+      catch (e) { if (e.codigo === 'red') throw e; }
+    }
+    throw errG.codigo === 'clave_gemini' ? err(errG.message, 'sin_ia') : errG;
+  }
+
   // Si la IA de la nube no puede, el pedido pasa a Claude en el PC (como antes).
   const K_PC = 'nutrifit.iaPC';
   const alPCids = () => { try { return JSON.parse(localStorage.getItem(K_PC) || '[]'); } catch (e) { return []; } };
@@ -126,7 +231,8 @@
       const texto = job.tipo === 'texto' ? `Alimento: ${job.consulta}\nCantidad que comí: ${job.cant || 'no la sé (usa una porción normal)'}`
         : job.tipo === 'etiqueta' ? `Producto: ${job.meta.nombre || '(sin nombre)'}\nCuánto comí: ${job.meta.cant || 'nada todavía, solo quiero guardar el producto'}`
         : 'Analiza esta comida.';
-      const r = await window.Sync.ia(job.tipo, { b64: job.b64, texto, conocidos: job.tipo === 'etiqueta' ? '' : conocidos() });
+      const r = await consultarIA(job, texto);
+      job.proveedor = r.proveedor;
       const out = aplicar(job, r.resultado || {});
       quitar(job.id);
       window.dispatchEvent(new CustomEvent('ia-lista', { detail: { id: job.id, tipo: job.tipo, ...out } }));
@@ -136,7 +242,7 @@
       job.fallos = (job.fallos || 0) + 1;
       // Gemini saturado (algo pasajero): se reintenta cada minuto; si sigue así unos 8 minutos, pasa a Claude en el PC
       if ((e.codigo === 'saturado' || e.codigo === 'ia') && job.fallos < 8) {
-        job.motivo = 'Gemini está con mucha demanda; se reintenta solo en un minuto';
+        job.motivo = (e.codigo === 'saturado' ? 'Gemini está con mucha demanda' : 'La IA no respondió') + '; se reintenta solo en un minuto';
         actualizar(job);
         setTimeout(procesar, 60000);
         window.dispatchEvent(new CustomEvent('ia-espera', { detail: { id: job.id } }));
@@ -158,7 +264,8 @@
   async function procesar() {
     if (corriendo || !window.Sync.conectado()) return;
     corriendo = true;
-    try { for (const job of cola()) await resolver(job); } finally { corriendo = false; }
+    // En paralelo: una consulta que espera a Gemini no atrasa a las demás
+    try { await Promise.all(cola().map((job) => resolver(job))); } finally { corriendo = false; }
   }
 
   // Los "Claude calcula…" que quedaron esperando (por ejemplo, anotados sin internet o en otro aparato) también se resuelven aquí
@@ -174,7 +281,7 @@
   function pedir(job) { const c = cola(); c.push(job); guardar(c); procesar(); }
 
   window.IA = {
-    pedir, procesar, enCola: (id) => cola().some((j) => j.id === id), trabajando: (id) => trabajando.has(id),
+    pedir, procesar, enCola: (id) => cola().some((j) => j.id === id), trabajando: (id) => trabajando.has(id), iaConfig, geminiDirecto,
     motivo: (id) => (cola().find((j) => j.id === id) || {}).motivo || '',
   };
   // Se reintenta al volver internet, al volver a la app y cada vez que se sincroniza

@@ -553,7 +553,7 @@
           <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
           ${dataUrl ? `<img class="food-photo" src="${dataUrl}" alt="Foto del plato">` : ''}
           <h2>${esc(r.plato || 'Tu plato')}</h2>
-          <p class="ok small">✅ ${r.ia === 'gemini' ? 'La IA' : 'Claude'} ya lo anotó en tu día. Revisa y corrige si hace falta.</p>
+          <p class="ok small">✅ ${r.ia === 'gemini' ? 'La IA (Gemini)' : r.ia === 'claude-nube' ? 'Claude (en la nube)' : 'Claude (en tu PC)'} ya lo anotó en tu día. Revisa y corrige si hace falta.</p>
           <div class="food-total"><strong>${Math.round(total)}</strong> kcal aprox. <span class="pill ${r.confianza === 'alta' ? 'ok' : r.confianza === 'baja' ? 'bad' : 'warn'}">confianza ${esc(r.confianza || 'media')}</span></div>
           ${r.nota ? `<p class="muted small">💡 ${esc(r.nota)}</p>` : ''}
           <ul class="food-items">${items.map((x, i) => `
