@@ -489,7 +489,7 @@
       <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="Editar">
         <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
         <h2>✏️ ${esc(e.name)}</h2>
-        ${q0 ? `<p class="muted small">Cantidad</p><div class="inline-form"><input id="edq" type="number" inputmode="decimal" min="0" value="${q0}"><span class="mf-unit">${u}</span></div>`
+        ${q0 ? `<p class="muted small">Cantidad</p><div class="inline-form"><input id="edq" type="number" inputmode="decimal" min="0" value="${q0}"><span class="mf-unit">${u}</span></div>${e.ml ? `<div id="edmlc">${mlChips(q0)}</div>` : ''}`
           : `<p class="muted small">Calorías</p><div class="inline-form"><input id="edk" type="number" inputmode="decimal" min="0" value="${Math.round(e.kcal || 0)}"><span class="mf-unit">kcal</span></div>`}
         <p class="food-total"><strong id="edkc">${Math.round(e.kcal || 0)}</strong> kcal <span class="muted small" id="edmac"></span></p>
         <label class="meal-sel">Comida: <select id="edmeal">${MEALS.map(([k, l]) => `<option value="${k}" ${k === e.meal ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -508,6 +508,11 @@
       $e('#edmac').textContent = `· Prot ${Math.round((e.p || 0) * k)} · Carb ${Math.round((e.c || 0) * k)} · Grasa ${Math.round((e.g || 0) * k)} g`;
     };
     (q0 ? $e('#edq') : $e('#edk')).oninput = pintar;
+    modal.querySelectorAll('#edmlc [data-mlc]').forEach((c) => c.onclick = () => {
+      $e('#edq').value = c.dataset.mlc;
+      modal.querySelectorAll('#edmlc [data-mlc]').forEach((x) => x.classList.toggle('on', x === c));
+      pintar();
+    });
     pintar();
     $e('.m-close').onclick = closeModal;
     $e('#edsave').onclick = () => {
@@ -820,6 +825,7 @@
         <div id="mfform" hidden>
           <p class="mf-name"><strong id="mfname"></strong> <span class="muted small" id="mfhint"></span></p>
           <div class="inline-form"><input id="mfqty" type="number" inputmode="decimal" min="0"><span id="mfunit" class="mf-unit"></span></div>
+          <div id="mfmlc"></div>
           <p class="food-total"><strong id="mfkcal">0</strong> kcal</p>
           <div id="mfextra" class="mf-extra"></div>
           <div id="mfadd" class="agregados"></div>
@@ -919,7 +925,13 @@
         $m('#mfname').textContent = sel.n + (sel.marca ? ' · ' + sel.marca : '');
         $m('#mfhint').textContent = sel.u || (sel.src === 'off' ? 'tabla nutricional del envase' : '');
         $m('#mfunit').textContent = sel.ml ? 'ml' : 'g';
-        $m('#mfqty').value = sel.porcion || 100;
+        $m('#mfqty').value = (sel.ml && opts.qty) || sel.porcion || 100;
+        const pintarMl = () => {
+          $m('#mfmlc').innerHTML = sel.ml ? mlChips($m('#mfqty').value) : '';
+          modal.querySelectorAll('#mfmlc [data-mlc]').forEach((c) => c.onclick = () => { $m('#mfqty').value = c.dataset.mlc; pintarMl(); calc(); });
+        };
+        pintarMl();
+        $m('#mfqty').oninput = () => { pintarMl(); calc(); };
         if (sel.ml && !mealTocado && !opts.meal) $m('#mfmeal').value = /vino|cerveza|pisco|ron|whisky|vodka|trago|terremoto|cola de mono|michelada|mojito|ponche|sangr/i.test(sel.n) ? 'tragos' : 'liquidos';
         const ex = EXTRAS.filter(([x]) => sel[x] !== undefined);
         $m('#mfextra').innerHTML = (sel.sellos || []).map((t) => `<span class="sello">${esc(t)}</span>`).join('')
@@ -963,6 +975,7 @@
           reg.push({ name: `${n} (${cnt} ${u}) · en ${sel.n}`, gr: b.ml ? null : q2, ml: b.ml ? q2 : null, kcal: Math.round(b.kcal * k2), p: Math.round(b.p * k2 * 10) / 10, c: Math.round(b.c * k2 * 10) / 10, g: Math.round(b.g * k2 * 10) / 10, fb: Math.round((b.fb || 0) * k2 * 10) / 10, ...extrasDe(b, k2), meal: mk, src: 'manual' });
         }
         addFood(p.id, reg, dia);
+        if (opts.liq && sel.ml && v > 0) setMlPref(opts.liq, Math.round(v));
       } else if (modo === 'ai') {
         const id = 'c' + uidF(), consulta = $m('#aiq').value.trim(), cant = $m('#aicant').value.trim();
         addFood(p.id, [{ id, pend: true, consulta, cant, name: consulta, kcal: 0, meal: mk, src: 'claude' }], dia);
@@ -1593,6 +1606,44 @@
     te: { name: 'Té o infusión', ml: 250, kcal: 2, p: 0, c: 0.3, g: 0 },
     cafe: { name: 'Café solo', ml: 200, kcal: 2, p: 0.2, c: 0, g: 0 },
   };
+  // Cantidades para líquidos (ml). Cada botón rápido recuerda la última cantidad usada.
+  const ML_OPCIONES = [100, 150, 200, 250, 300, 350, 400, 500, 750, 1000];
+  const K_ML = 'nutrifit.ml';
+  const mlPref = (k) => { try { return JSON.parse(localStorage.getItem(K_ML) || '{}')[k] || LIQ_RAPIDOS[k].ml; } catch (e) { return LIQ_RAPIDOS[k].ml; } };
+  const setMlPref = (k, v) => { try { const o = JSON.parse(localStorage.getItem(K_ML) || '{}'); o[k] = v; localStorage.setItem(K_ML, JSON.stringify(o)); } catch (e) { /* */ } };
+  const mlTxt = (v) => (v >= 1000 ? (v / 1000).toLocaleString('es') + ' L' : v + ' ml');
+  const mlChips = (actual, attr = 'data-mlc') => `<div class="ml-chips">${ML_OPCIONES.map((v) => `<button type="button" class="ml-chip ${+actual === v ? 'on' : ''}" ${attr}="${v}">${mlTxt(v)}</button>`).join('')}</div>`;
+
+  // Cuadro para elegir cuántos ml: cantidades de un toque o escribir otra.
+  function elegirMl(titulo, actual, listo) {
+    modal.innerHTML = `
+      <div class="m-sheet food-sheet" role="dialog" aria-modal="true" aria-label="Cantidad">
+        <button class="icon-btn m-close" aria-label="Cerrar">✕</button>
+        <h2>💧 ${esc(titulo)}</h2>
+        <p class="muted small">¿Cuánto tomaste? Toca una cantidad:</p>
+        ${mlChips(actual)}
+        <p class="muted small">O escribe otra:</p>
+        <div class="inline-form"><input id="mlotro" type="number" inputmode="numeric" min="1" max="5000" placeholder="Ej: 180"><span class="mf-unit">ml</span><button class="btn primary small" id="mlok">Usar</button></div>
+        <p class="muted small">La próxima vez este botón usará la cantidad que elijas.</p>
+      </div>`;
+    modal.classList.remove('hidden');
+    const fin = (v) => { v = Math.round(+v); if (!(v > 0 && v <= 5000)) return toast('Escribe una cantidad entre 1 y 5000 ml', 'warn'); closeModal(); listo(v); };
+    modal.querySelector('.m-close').onclick = closeModal;
+    modal.querySelectorAll('[data-mlc]').forEach((b) => b.onclick = () => fin(b.dataset.mlc));
+    modal.querySelector('#mlok').onclick = () => fin(modal.querySelector('#mlotro').value);
+    modal.querySelector('#mlotro').onkeydown = (e) => { if (e.key === 'Enter') fin(e.target.value); };
+  }
+
+  // Toque normal → alToque; mantener apretado (medio segundo) → alMantener. Funciona con dedo y con mouse.
+  function mantener(el, alToque, alMantener) {
+    let t = null, largo = false;
+    const parar = () => { clearTimeout(t); t = null; };
+    el.addEventListener('pointerdown', () => { largo = false; t = setTimeout(() => { largo = true; t = null; if (navigator.vibrate) navigator.vibrate(25); alMantener(); }, 500); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => el.addEventListener(ev, parar));
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    el.addEventListener('click', (e) => { if (largo) { e.preventDefault(); largo = false; return; } alToque(); });
+  }
+
   function liquidosCard(p, key, metaL) {
     const ml = liquidosDia(p, key), meta = Math.round(metaL * 1000), pct = Math.min(100, Math.round((ml / meta) * 100));
     const L = (x) => (x / 1000).toLocaleString('es', { maximumFractionDigits: 2 });
@@ -1601,11 +1652,12 @@
         <h3>💧 Líquidos del día <span class="muted small">${L(ml)} de ${L(meta)} L</span></h3>
         <div class="bar liq"><i style="width:${pct}%"></i></div>
         <div class="liq-btns">
-          <button class="btn ghost small" data-liq="agua">+ Vaso de agua</button>
-          <button class="btn ghost small" data-liq="te">+ Té o infusión</button>
-          <button class="btn ghost small" data-liq="cafe">+ Café</button>
-          <button class="btn ghost small" id="liqotro">+ Otro (jugo, leche…)</button>
+          <button class="btn ghost small liq-btn" data-liq="agua">+ Vaso de agua <small>${mlTxt(mlPref('agua'))}</small></button>
+          <button class="btn ghost small liq-btn" data-liq="te">+ Té o infusión <small>${mlTxt(mlPref('te'))}</small></button>
+          <button class="btn ghost small liq-btn" data-liq="cafe">+ Café <small>${mlTxt(mlPref('cafe'))}</small></button>
+          <button class="btn ghost small liq-btn" id="liqotro">+ Otro (jugo, leche…)</button>
         </div>
+        <p class="muted small">👆 Mantén apretado un botón para elegir otra cantidad.</p>
         <p class="muted small">Cuentan el agua, el té, el café, los jugos y la leche. Los tragos no suman. ${ml >= meta ? '✅ ¡Meta cumplida!' : `Te faltan ${L(meta - ml)} L.`}</p>
       </div>`;
   }
@@ -1925,15 +1977,18 @@
       $$('[data-del]').forEach((b) => b.onclick = () => { removeFood(p.id, k, b.dataset.del); renderPlan(p.id, 'nutri'); });
       $('#foodmanual').onclick = () => openManualFood(p);
       $('#kgopen').onclick = () => openKcalGoal(p, 'nutri');
-      $$('[data-liq]').forEach((b) => b.onclick = () => {
-        // Té y café: se abre para marcar azúcar, leche, etc.; el agua se anota al tiro
-        if (b.dataset.liq === 'te') return openManualFood(p, { meal: 'liquidos', elegir: 'Té negro solo' });
-        if (b.dataset.liq === 'cafe') return openManualFood(p, { meal: 'liquidos', elegir: 'Café negro / americano' });
-        const x = LIQ_RAPIDOS[b.dataset.liq];
-        addFood(p.id, [{ ...x, meal: 'liquidos', src: 'rapido' }], k);
-        toast(`💧 ${x.name} · ${x.ml} ml`);
+      // Agua: se anota al tiro. Té y café: se abre para marcar azúcar, leche, etc. Mantener apretado: elegir la cantidad.
+      const ELEGIR = { te: 'Té negro solo', cafe: 'Café negro / americano' };
+      const anotarLiq = (q, ml) => {
+        if (ELEGIR[q]) return openManualFood(p, { meal: 'liquidos', elegir: ELEGIR[q], qty: ml, liq: q });
+        const x = LIQ_RAPIDOS[q], f = ml / x.ml;
+        addFood(p.id, [{ ...x, ml, kcal: Math.round(x.kcal * f), p: Math.round(x.p * f * 10) / 10, c: Math.round(x.c * f * 10) / 10, meal: 'liquidos', src: 'rapido' }], k);
+        toast(`💧 ${x.name} · ${mlTxt(ml)}`);
         renderPlan(p.id, 'nutri');
-      });
+      };
+      $$('[data-liq]').forEach((b) => mantener(b,
+        () => anotarLiq(b.dataset.liq, mlPref(b.dataset.liq)),
+        () => elegirMl(b.textContent.replace(/\s+\S+ ?(ml|L)$/, '').replace('+', '').trim(), mlPref(b.dataset.liq), (v) => { setMlPref(b.dataset.liq, v); anotarLiq(b.dataset.liq, v); })));
       $('#liqotro').onclick = () => openManualFood(p, { meal: 'liquidos', q: '' });
       $('#foodphoto').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) analyzePhoto(p, f); };
       $('#foodgal').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) fotoDeFototeca(p, f); };
